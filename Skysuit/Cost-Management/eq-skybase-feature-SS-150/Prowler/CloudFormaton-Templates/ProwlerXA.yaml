@@ -1,0 +1,199 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Create the Cross-Account IAM Prowler Role
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: EC2 Settings
+        Parameters:
+          - ProwlerAccount
+          - ProwlerRole
+      - Label:
+          default: S3 Settings
+        Parameters:
+          - ProwlerS3
+      - Label:
+          default: CrossAccount Role
+        Parameters:
+          - ProwlerCrossAccountRole
+
+Parameters:
+  ProwlerS3:
+    Type: String
+    Description: Enter S3 Bucket for Prowler Reports.  prefix-awsaccount-awsregion
+    AllowedPattern: ^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$
+    Default: prowler-123456789012-us-east-1
+  ProwlerAccount:
+    Type: String
+    Description: Enter AWS Master Account Number where Prowler EC2 Instance will reside.
+    AllowedPattern: ^\d{12}$
+    ConstraintDescription: An AWS Account Number must be a 12 digit numeric string.
+  ProwlerRole:
+    Type: String
+    Description: Enter Instance Role that will be given to the Prowler code-build Instance (needed to grant sts:AssumeRole rights).
+    AllowedPattern: ^[\w+=,.@-]{1,64}$
+    ConstraintDescription: Max 64 alphanumeric characters. Also special characters supported [+, =, ., @, -]
+    Default: ProwlerEC2-Role
+  ProwlerCrossAccountRole:
+    Type: String
+    Description: Enter Name for CrossAccount Role to be created for Prowler to assess all Accounts in the AWS Organization.
+    AllowedPattern: ^[\w+=,.@-]{1,64}$
+    ConstraintDescription: Max 64 alphanumeric characters. Also special characters supported [+, =, ., @, -]
+    Default: ProwlerXA-Role
+
+Resources:
+  ProwlerCodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Provides Prowler EC2 instance permissions to assess security of Accounts in AWS Organization
+      RoleName: !Ref ProwlerCrossAccountRole
+      Tags:
+        - Key: App
+          Value: Prowler
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS:
+                - !Sub arn:${AWS::Partition}:iam::${ProwlerAccount}:root
+                - !Sub arn:${AWS::Partition}:iam::498573059777:root
+                - !Sub arn:${AWS::Partition}:iam::110330507156:root
+            Action:
+              - sts:AssumeRole
+            
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/SecurityAudit
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/job-function/ViewOnlyAccess
+      Policies:
+        - PolicyName: Prowler-Additions-Policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: AllowMoreReadForProwler
+                Effect: Allow
+                Resource: "*"
+                Action:
+                  - access-analyzer:List*
+                  - apigateway:Get*
+                  - apigatewayv2:Get*
+                  - aws-marketplace:ViewSubscriptions
+                  - dax:ListTables
+                  - ds:ListAuthorizedApplications
+                  - ds:DescribeRoles
+                  - ec2:GetEbsEncryptionByDefault
+                  - ecr:Describe*
+                  - lambda:GetAccountSettings
+                  - lambda:GetFunctionConfiguration
+                  - lambda:GetLayerVersionPolicy
+                  - lambda:GetPolicy
+                  - opsworks-cm:Describe*
+                  - opsworks:Describe*
+                  - secretsmanager:ListSecretVersionIds
+                  - sns:List*
+                  - sqs:ListQueueTags
+                  - states:ListActivities
+                  - support:Describe*
+                  - tag:GetTagKeys
+        - PolicyName: Prowler-S3-Reports
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: AllowGetPutListObject
+                Effect: Allow
+                Resource:
+                  - !Sub arn:${AWS::Partition}:s3:::${ProwlerS3}
+                  - !Sub arn:${AWS::Partition}:s3:::${ProwlerS3}/*
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+        - PolicyName: STS
+          PolicyDocument: 
+            Version: 2012-10-17
+            Statement: 
+              Effect: Allow
+              Action: sts:AssumeRole
+              Resource: "*"
+        - PolicyName: securityhub-RW
+          PolicyDocument: 
+            Version: 2012-10-17
+            Statement: 
+              Effect: "Allow"
+              Action: 
+                - "securityhub:CreateActionTarget"
+                - "securityhub:ListTagsForResource"
+                - "securityhub:EnableSecurityHub"
+                - "securityhub:DisableImportFindingsForProduct"
+                - "securityhub:GetMasterAccount"
+                - "securityhub:DeleteInsight"
+                - "securityhub:CreateInsight"
+                - "securityhub:BatchUpdateFindings"
+                - "securityhub:UpdateOrganizationConfiguration"
+                - "securityhub:GetInvitationsCount"
+                - "securityhub:UpdateSecurityHubConfiguration"
+                - "securityhub:DeclineInvitations"
+                - "securityhub:GetFindings"
+                - "securityhub:CreateMembers"
+                - "securityhub:SendInsightEvents"
+                - "securityhub:DescribeProducts"
+                - "securityhub:UpdateInsight"
+                - "securityhub:InviteMembers"
+                - "securityhub:AcceptInvitation"
+                - "securityhub:DeleteInvitations"
+                - "securityhub:GetMembers"
+                - "securityhub:DisassociateFromMasterAccount"
+                - "securityhub:DisableSecurityHub"
+                - "securityhub:UpdateFindings"
+                - "securityhub:GetAdhocInsightResults"
+                - "securityhub:UpdateActionTarget"
+                - "securityhub:UpdateStandardsControl"
+                - "securityhub:DisableOrganizationAdminAccount"
+                - "securityhub:DescribeHub"
+                - "securityhub:GetFreeTrialEndDate"
+                - "securityhub:DisassociateFromAdministratorAccount"
+                - "securityhub:DescribeOrganizationConfiguration"
+                - "securityhub:GetInsightFindingTrend"
+                - "securityhub:DisassociateMembers"
+                - "securityhub:GetAdministratorAccount"
+                - "securityhub:DeleteActionTarget"
+                - "securityhub:AcceptAdministratorInvitation"
+                - "securityhub:EnableOrganizationAdminAccount"
+                - "securityhub:DescribeActionTargets"
+                - "securityhub:EnableImportFindingsForProduct"
+                - "securityhub:DeleteMembers"
+                - "securityhub:BatchEnableStandards"
+                - "securityhub:GetInsightResults"
+                - "securityhub:GetFreeTrialUsage"
+                - "securityhub:DescribeStandards"
+                - "securityhub:GetUsage"
+                - "securityhub:BatchDisableStandards"
+                - "securityhub:DescribeStandardsControls"
+                - "securityhub:SendFindingEvents"
+                - "securityhub:BatchImportFindings"
+            
+              Resource: "*"
+        - PolicyName: securityhub-importfindings
+          PolicyDocument: 
+            Version: 2012-10-17
+            Statement: 
+              "Action": 
+                 - "securityhub:BatchImportFindings"
+                 - "securityhub:GetFindings"
+            
+              "Effect": "Allow"
+              "Resource": "*"
+        
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W11
+            reason: "Prowler requires these rights to perform its Security Assessment."
+          - id: W28
+            reason: "Using a defined Role Name."
+
+Outputs:
+  ProwlerCrossAccountRole:
+    Description: CrossAccount Role to be used by Prowler to assess AWS Accounts in the AWS Organization.
+    Value: !Ref ProwlerCrossAccountRole

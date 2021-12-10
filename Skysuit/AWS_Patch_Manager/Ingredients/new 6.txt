@@ -1,0 +1,11 @@
+
+
+
+NS-patch-management
+
+
+AmazonEC2Role
+
+Amazon Linux AMI 2018.03.0.20200904.0 x86_64 HVM gp2
+
+9981 12 3296

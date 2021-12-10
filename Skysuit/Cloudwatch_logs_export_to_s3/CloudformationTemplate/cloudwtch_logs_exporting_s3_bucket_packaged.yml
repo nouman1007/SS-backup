@@ -1,0 +1,131 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: S3 Bucket Creation, Put Bucket Policy, Export cloudwatch logs to that
+  Bucket, cloudwatch Rule.
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Cloudwatch Logs & Destination Bucket Information
+      Parameters:
+      - pCloudwatchLogsBucketName
+      - pTargetId
+    ParameterLabels:
+      pCloudwatchLogsBucketName:
+        default: Destination Bucket Name
+      pTargetId:
+        default: Name for the target ID to cloudwatch rule.
+Parameters:
+  pCloudwatchLogsBucketName:
+    Type: String
+    Default: cloudwatchlogsbucket
+    Description: Enter Name of Cloudwatch Logs Bucket(Lower Case).
+  pTargetId:
+    Type: String
+    Default: cw-lg-expt-Func
+    Description: A name for the target. Use a string that will help you identify the
+      target. Each target associated with a rule must have an Id unique for that rule.
+Resources:
+  rCloudwatchLogsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName:
+        Fn::Sub: ${pCloudwatchLogsBucketName}-${AWS::AccountId}-${AWS::Region}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
+    DeletionPolicy: Retain
+  rBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket:
+        Ref: rCloudwatchLogsBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Sid: ExportCloudwatchLogs
+          Effect: Allow
+          Principal:
+            Service: logs.amazonaws.com
+          Action: s3:GetBucketAcl
+          Resource:
+            Fn::Sub: arn:aws:s3:::${pCloudwatchLogsBucketName}-${AWS::AccountId}-${AWS::Region}
+        - Sid: ExportingCloudwatchLogs
+          Effect: Allow
+          Principal:
+            Service: logs.amazonaws.com
+          Action: s3:PutObject
+          Resource:
+          - Fn::Sub: arn:aws:s3:::${pCloudwatchLogsBucketName}-${AWS::AccountId}-${AWS::Region}/*
+          Condition:
+            StringEquals:
+              s3:x-amz-acl: bucket-owner-full-control
+  rAWSCloudWatchLogExportFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: rBucketPolicy
+    Properties:
+      Handler: index.handler
+      Role:
+        Fn::GetAtt:
+        - rLambdaExRole
+        - Arn
+      Code:
+        S3Bucket: patch-lambda-code
+        S3Key: 66c70f3fcd86f80557297caa935646c9
+      Runtime: python3.7
+      Timeout: 240
+      Environment:
+        Variables:
+          Dest_Bucket_Name:
+            Fn::Sub: ${pCloudwatchLogsBucketName}-${AWS::AccountId}-${AWS::Region}
+  rLambdaExRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+      - PolicyName: AWSCloudwatchLogsExporterPolicy
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:*
+            - s3:*
+            Resource: '*'
+  rScheduledRuleForLambdaFunc:
+    Type: AWS::Events::Rule
+    DependsOn: rAWSCloudWatchLogExportFunction
+    Properties:
+      Description: Scheduled Rule for export cloudwatch logs to s3 Bucket
+      ScheduleExpression: rate(1 day)
+      State: ENABLED
+      Targets:
+      - Arn:
+          Fn::GetAtt:
+          - rAWSCloudWatchLogExportFunction
+          - Arn
+        Id:
+          Ref: pTargetId
+  rPermissionForEventsToInvokeLambda:
+    Type: AWS::Lambda::Permission
+    DependsOn: rAWSCloudWatchLogExportFunction
+    Properties:
+      FunctionName:
+        Ref: rAWSCloudWatchLogExportFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+        - rScheduledRuleForLambdaFunc
+        - Arn

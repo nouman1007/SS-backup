@@ -1,0 +1,90 @@
+Type: AWS::Events::Rule
+Properties: 
+  Description: String
+  EventBusName: String 		'default'
+  EventPattern: Json
+  Name: String				'ssm-patching'
+  RoleArn: String			'arn:aws:iam::522955560990:role/service-role/AWS_Events_Invoke_Run_Command_1711827196'
+  ScheduleExpression: String	'cron(47 12 ? * * *)'
+  State: String					'ENABLED'
+  Targets: 
+    - Target
+
+
+{
+  'Name': 'ssm-patching',
+  'Arn': 'arn:aws:events:us-east-1:522955560990:rule/ssm-patching',
+  'ScheduleExpression': 'cron(47 12 ? * * *)',
+  'State': 'ENABLED',
+  'Description': 'ssm-patching- test',
+  'EventBusName': 'default',
+  'ResponseMetadata': {
+    'RequestId': 'd069925b-8358-4cf6-83e0-0fd8c08a1556',
+    'HTTPStatusCode': 200,
+    'HTTPHeaders': {
+      'x-amzn-requestid': 'd069925b-8358-4cf6-83e0-0fd8c08a1556',
+      'content-type': 'application/x-amz-json-1.1',
+      'content-length': '235',
+      'date': 'Mon, 19 Oct 2020 11:44:11 GMT'
+    },
+    'RetryAttempts': 0
+  }
+}
+
+
+{
+  'Targets': [
+    {
+      'Id': 'Id7257224497110',
+      'Arn': 'arn:aws:ssm:us-east-1::document/AWS-RunPatchBaseline',
+      'RoleArn': 'arn:aws:iam::522955560990:role/service-role/AWS_Events_Invoke_Run_Command_1711827196',
+      'Input': '{"Operation":["Install"]}',
+      'RunCommandParameters': {
+        'RunCommandTargets': [
+          {
+            'Key': 'tag:Patch Group',
+            'Values': [
+              'Win'
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  'ResponseMetadata': {
+    'RequestId': '2f1c4249-2ce9-4574-8f89-f0fd1892c094',
+    'HTTPStatusCode': 200,
+    'HTTPHeaders': {
+      'x-amzn-requestid': '2f1c4249-2ce9-4574-8f89-f0fd1892c094',
+      'content-type': 'application/x-amz-json-1.1',
+      'content-length': '326',
+      'date': 'Mon, 19 Oct 2020 11:44:11 GMT'
+    },
+    'RetryAttempts': 0
+  }
+}
+
+
+"RoleArn": "string",
+      "RunCommandParameters": {
+        "RunCommandTargets": [
+          {
+            "Key": "string",
+            "Values": [
+              "string"
+            ]
+          }
+        ]
+      }
+	  
+	  
+===========================================================================================================
+
+	    # RoleArn: !GetAtt rEventRole.Arn   #'arn:aws:iam::522955560990:role/service-role/AWS_Events_Invoke_Run_Command_1711827196'
+	    # Id: 'Id7257224497112'
+	    # Input: '{"Operation":["Install"]}'
+	    # RunCommandParameters: 
+		  # RunCommandTargets:
+		    # - Key: 'tag:Patch Group'
+			  # Values: 
+			    # - !Ref pPatchGroupValues

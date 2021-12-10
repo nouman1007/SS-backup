@@ -1,0 +1,65 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Set retention retention period.
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Cloudwatch Logs Information
+      Parameters:
+      - pCloudwatchLogsRetentionPeriod
+    ParameterLabels:
+      pCloudwatchLogsRetentionPeriod:
+        default: Retention Period in Days
+Parameters:
+  pCloudwatchLogsRetentionPeriod:
+    Type: Number
+    Default: 30
+    Description: Enter retention period (in days) of Cloudwatch Logs.
+Resources:
+  rCWLogSetRetentionFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role:
+        Fn::GetAtt:
+        - rLambdaExRole
+        - Arn
+      Code:
+        S3Bucket: patch-lambda-code
+        S3Key: 1774c3ee6b1b0576cbbe70d9b9968960
+      Runtime: python3.7
+      Timeout: 240
+  rLambdaExRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+      - PolicyName: AWSCloudwatchLogsExporterPolicy
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:DescribeLogGroups
+            - logs:PutRetentionPolicy
+            Resource: '*'
+  rSettingRetentionPolicy:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+        - rCWLogSetRetentionFunction
+        - Arn
+      cw_logs_retention:
+        Ref: pCloudwatchLogsRetentionPeriod

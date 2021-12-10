@@ -1,0 +1,39 @@
+# Create AWSCloudFormationStackSetAdministrationRole to support AWS CloudFormation StackSets in managed accounts
+# (c) Enquizit, Inc 2020
+# v1.0 2021-03-16
+
+AWSTemplateFormatVersion: 2010-09-09
+Description: Configure the AWSCloudFormationStackSetAdministrationRole to support AWS CloudFormation StackSets in managed accounts.
+
+###################################################
+#
+# Template Resource Definitions
+#
+###################################################
+
+Resources:
+
+  # creates a cross-account role called AWSCloudFormationStackSetAdministrationRole
+  rAdministrationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: AWSCloudFormationStackSetAdministrationRole
+      AssumeRolePolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          - Effect: Allow
+            Principal: 
+              Service: cloudformation.amazonaws.com
+            Action: 
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: AssumeExecutionRole
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - sts:AssumeRole
+                Resource: 
+                  - "arn:aws:iam::*:role/AWSCloudFormationStackSetExecutionRole"

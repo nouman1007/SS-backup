@@ -1,0 +1,357 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Cloudformation Template for the management account for the budget control
+  solution
+
+
+Parameters:
+  DeploymentType:
+    Type: String
+    Default: CENTRALIZED
+    Description: Choose between CENTRALIZED and DECENTRALIZED approach for budget
+      control.
+    AllowedValues:
+    - CENTRALIZED
+    - DECENTRALIZED
+	
+  AccountList:
+    Type: String
+    AllowedPattern: ^"\d{12}"(,"\d{12}")*$|(^\s*)$
+    Description: List of comma-separated and double-quoted account numbers to monitor.
+      If you enter multiple secondary account IDs, you must also provide the primary
+      account ID in this parameter.
+	  
+  NotificationEmailAddress:
+    Type: String
+    Description: The email address to subscribe for SNS Budget Control solution alert
+      messages,
+	  
+  QuarantineOU:
+    Type: String
+    Description: Organization ID of the Quarantine OU
+	
+Conditions:
+  SingleAccnt:
+    Fn::Equals:
+    - Ref: DeploymentType
+    - CENTRALIZED
+  MultiAccnt:
+    Fn::Equals:
+    - Ref: DeploymentType
+    - DECENTRALIZED
+
+
+
+Resources:
+  BudgetActionNotificationSnsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName:
+        Fn::Join:
+        - ''
+        - - budget-action-notification-topic
+          - Fn::Select:
+            - 2
+            - Fn::Split:
+              - /
+              - Ref: AWS::StackId
+  
+  
+  BudgetEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint:
+        Ref: NotificationEmailAddress
+      Protocol: email
+      TopicArn:
+        Ref: BudgetActionNotificationSnsTopic
+  
+  
+  BudgetNotificationSnsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName:
+        Fn::Join:
+        - ''
+        - - budget-control-notification-topic
+          - Fn::Select:
+            - 2
+            - Fn::Split:
+              - /
+              - Ref: AWS::StackId
+      Subscription:
+      - Protocol: lambda
+        Endpoint:
+          Fn::GetAtt:
+          - BudgetControlSNSEventTarget
+          - Arn
+    Condition: SingleAccnt
+ 
+
+ BudgetNotificationsnsTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      PolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: budgets.amazonaws.com
+          Action:
+          - SNS:Publish
+          Resource:
+            Ref: BudgetNotificationSnsTopic
+      Topics:
+      - Ref: BudgetNotificationSnsTopic
+    Condition: SingleAccnt
+  
+  
+  EventBusPermissionPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - events:PutPermission
+          - events:RemovePermission
+          Resource:
+            Fn::Join:
+            - ''
+            - - 'arn:'
+              - Ref: AWS::Partition
+              - ':events:'
+              - Ref: AWS::Region
+              - ':'
+              - Ref: AWS::AccountId
+              - :event-bus/default
+  
+  
+  BudgetControlAWSOrganizationsPermissionPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - organizations:ListParents
+          - organizations:MoveAccount
+          - organizations:DescribeOrganizationalUnit
+          Resource:
+          - Fn::Join:
+            - ''
+            - - 'arn:'
+              - Ref: AWS::Partition
+              - ':organizations::'
+              - Ref: AWS::AccountId
+              - :account/o-*/*
+          - Fn::Join:
+            - ''
+            - - 'arn:'
+              - Ref: AWS::Partition
+              - ':organizations::'
+              - Ref: AWS::AccountId
+              - :ou/o-*/ou-*
+  
+  
+  BudgetControlAWSBudgetsPermissionPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - budgets:ViewBudget
+          Resource:
+            Fn::Join:
+            - ''
+            - - 'arn:'
+              - Ref: AWS::Partition
+              - ':budgets::'
+              - Ref: AWS::AccountId
+              - :budget/*
+  
+  
+  EventBusEstablishTrust:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: s3://mng-blog-solutions/AutoControlCost/a9d8738f55f07aab84625c5a2e18e168
+      Handler: establish_trust.handler
+      Runtime: python3.8
+      Description: Python Function to Establish trust for EventBridge cross-account
+        events
+      MemorySize: 128
+      Timeout: 30
+      Policies:
+      - AWSLambdaBasicExecutionRole
+      - AWSLambda_ReadOnlyAccess
+      - Ref: EventBusPermissionPolicy
+      Tracing: Active
+    Condition: MultiAccnt
+  
+  
+  EstablishTrust:
+    Type: Custom::EventBusEstablishTrust
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+        - EventBusEstablishTrust
+        - Arn
+      ACCOUNT_IDS:
+        Ref: AccountList
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Condition: MultiAccnt
+	
+	
+  BudgetControlEventBridgeRuleTarget:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: s3://mng-blog-solutions/AutoControlCost/ea0bebc4a1e36dac9888432e194e7d26
+      Handler: budget_control_handler.lambda_handler
+      Runtime: python3.8
+      Description: Python function to handle eventbridge rule for budget control
+      MemorySize: 512
+      Timeout: 60
+      Environment:
+        Variables:
+          SNS_TOPIC_ARN:
+            Ref: BudgetActionNotificationSnsTopic
+          QUARANTINE_OU:
+            Ref: QuarantineOU
+      Policies:
+      - AWSLambdaBasicExecutionRole
+      - AWSLambda_ReadOnlyAccess
+      - Ref: BudgetControlAWSOrganizationsPermissionPolicy
+      - SNSPublishMessagePolicy:
+          TopicName:
+            Fn::Join:
+            - ''
+            - - budget-action-notification-topic
+              - Fn::Select:
+                - 2
+                - Fn::Split:
+                  - /
+                  - Ref: AWS::StackId
+      Tracing: Active
+    Condition: MultiAccnt
+	
+	
+  BudgetControlSNSEventTarget:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: s3://mng-blog-solutions/AutoControlCost/ea0bebc4a1e36dac9888432e194e7d26
+      Handler: budget_control_management_sns_handler.lambda_handler
+      Runtime: python3.8
+      Description: Python function to handle eventbridge rule for budget control
+      MemorySize: 512
+      Timeout: 60
+      Environment:
+        Variables:
+          SNS_TOPIC_ARN:
+            Ref: BudgetActionNotificationSnsTopic
+          QUARANTINE_OU:
+            Ref: QuarantineOU
+          ACCOUNT_IDS:
+            Ref: AccountList
+      Policies:
+      - AWSLambdaBasicExecutionRole
+      - AWSLambda_ReadOnlyAccess
+      - Ref: BudgetControlAWSBudgetsPermissionPolicy
+      - Ref: BudgetControlAWSOrganizationsPermissionPolicy
+      - SNSPublishMessagePolicy:
+          TopicName:
+            Fn::Join:
+            - ''
+            - - budget-action-notification-topic
+              - Fn::Select:
+                - 2
+                - Fn::Split:
+                  - /
+                  - Ref: AWS::StackId
+      Tracing: Active
+    Condition: SingleAccnt
+	
+	
+  BudgetControlSNSTargetInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+        - BudgetControlSNSEventTarget
+        - Arn
+      Principal: sns.amazonaws.com
+      SourceArn:
+        Ref: BudgetNotificationSnsTopic
+    Condition: SingleAccnt
+	
+	
+  BudgetControlEventBridgeRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        Fn::Join:
+        - ''
+        - - '{"account":['
+          - Fn::If:
+            - SingleAccnt
+            - Fn::Join:
+              - ''
+              - - '"'
+                - Ref: AWS::AccountId
+                - '"'
+            - Ref: AccountList
+          - '],'
+          - '"source":["budget-control-solution"],'
+          - '"detail-type":["Budget Threshold Breached"]'
+          - '}'
+      State: ENABLED
+      Targets:
+      - Arn:
+          Fn::GetAtt:
+          - BudgetControlEventBridgeRuleTarget
+          - Arn
+        Id: BudgetControlLambdaTarget
+    Condition: MultiAccnt
+	
+	
+  BudgetControlEventBridgeRuleTargetInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+        - BudgetControlEventBridgeRuleTarget
+        - Arn
+      Principal: events.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+        - BudgetControlEventBridgeRule
+        - Arn
+    Condition: MultiAccnt
+ 
+
+ DecentralizedModelMemberAccountStackSet:
+    Type: AWS::CloudFormation::StackSet
+    Properties:
+      AutoDeployment:
+        Enabled: true
+        RetainStacksOnAccountRemoval: false
+      Capabilities:
+      - CAPABILITY_IAM
+      - CAPABILITY_NAMED_IAM
+      PermissionModel: SERVICE_MANAGED
+      StackSetName: !Sub 'MemberAccountStackSet-${AWS::StackName}'
+      TemplateURL: https://s3.us-east-1.amazonaws.com/mng-blog-solutions/AutoControlCost/budget-control-member-cf.yml
+    Condition: MultiAccnt
+	
+	
+Outputs:
+  BudgetNotificationSnsTopic:
+    Description: AWS SNS Topic for notification of AWS Budgets alerts
+    Value:
+      Ref: BudgetNotificationSnsTopic
+    Condition: SingleAccnt

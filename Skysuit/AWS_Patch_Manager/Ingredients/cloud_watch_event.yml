@@ -1,0 +1,27 @@
+
+Description: creates a rule that invokes the specified Lambda function every 10 minutes.
+
+ScheduledRule: 
+  Type: AWS::Events::Rule
+  Properties: 
+    Description: "ScheduledRule"
+    ScheduleExpression: "rate(10 minutes)"
+    State: "ENABLED"
+    Targets: 
+      - 
+        Arn: 
+          Fn::GetAtt: 
+            - "LambdaFunction"
+            - "Arn"
+        Id: "TargetFunctionV1"
+PermissionForEventsToInvokeLambda: 
+  Type: AWS::Lambda::Permission
+  Properties: 
+    FunctionName: 
+      Ref: "LambdaFunction"
+    Action: "lambda:InvokeFunction"
+    Principal: "events.amazonaws.com"
+    SourceArn: 
+      Fn::GetAtt: 
+        - "ScheduledRule"
+        - "Arn"

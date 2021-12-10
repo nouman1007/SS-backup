@@ -1,0 +1,387 @@
+# Copyright 2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License"). You may not use this file except in compliance with the License.
+# A copy of the License is located at
+#    http://aws.amazon.com/apache2.0/
+# or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+# either express or implied. See the License for the specific language governing permissions and limitations under the License.
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: This CloudFormation template creates an EFS file system.
+
+#-----------------------------------------------------------
+# Metadata
+#-----------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+
+    ParameterGroups:
+      - Label:
+            default: File System Settings
+        Parameters:
+          - VpcId
+          - IngressCidrBlock
+          - NumberOfPrivateSubnetsInVpc
+          - PrivateSubnets
+
+    ParameterLabels:
+      VpcId:
+        default: VPC ID
+      IngressCidrBlock:
+        default: Ingress CIDR Block
+      NumberOfPrivateSubnetsInVpc:
+        default: Number of Private Subnets in VPC
+      PrivateSubnets:
+        default: Private Subnets (ONLY ONE PER AVAILABILITY ZONE)
+
+
+#-----------------------------------------------------------
+# Parameters
+#-----------------------------------------------------------
+
+Parameters:
+
+  VpcId:
+    Description: |
+      The VPC in which the EFS file system will reside.
+    Type: AWS::EC2::VPC::Id
+
+  IngressCidrBlock:
+    Description: |
+      Ingress IP address CIDR of SOURCE resources for EFS ingress security 
+      group rule.
+    Type: String
+    Default: 10.0.0.0/16
+
+  NumberOfPrivateSubnetsInVpc:
+    Description: |
+      This value will determine how many mount points to create and MUST match
+      the number of private subnets in the list below.
+    Type: String
+    AllowedValues:
+      - 1
+      - 2
+      - 3
+      - 4
+      - 5
+      - 6
+    Default: 2
+
+  PrivateSubnets:
+    Description: | 
+      The list of PRIVATE subnets in which to place the mount targets.
+      EACH SUBNET *MUST* BE IN A SEPARATE AVAILABILITY ZONE.
+    Type: List<AWS::EC2::Subnet::Id>
+
+
+#-----------------------------------------------------------
+# Rules
+#-----------------------------------------------------------
+
+Rules: {}
+
+#-----------------------------------------------------------
+# Conditions
+#-----------------------------------------------------------
+
+Conditions:
+
+  # These conditions will determine how many mount targets to create.
+  CreateMountTarget1: !Or 
+    - !Equals [!Ref NumberOfPrivateSubnetsInVpc, 1]
+    - !Equals [!Ref NumberOfPrivateSubnetsInVpc, 2]
+    - !Equals [!Ref NumberOfPrivateSubnetsInVpc, 3]
+    - !Equals [!Ref NumberOfPrivateSubnetsInVpc, 4]
+    - !Equals [!Ref NumberOfPrivateSubnetsInVpc, 5]
+    - !Equals [!Ref NumberOfPrivateSubnetsInVpc, 6]
+
+  CreateMountTarget2: !Or 
+    - !Equals [!Ref NumberOfPrivateSubnetsInVpc, 2]
+    - !Equals [!Ref NumberOfPrivateSubnetsInVpc, 3]
+    - !Equals [!Ref NumberOfPrivateSubnetsInVpc, 4]
+    - !Equals [!Ref NumberOfPrivateSubnetsInVpc, 5]
+    - !Equals [!Ref NumberOfPrivateSubnetsInVpc, 6]
+
+  CreateMountTarget3: !Or 
+    - !Equals [!Ref NumberOfPrivateSubnetsInVpc, 3]
+    - !Equals [!Ref NumberOfPrivateSubnetsInVpc, 4]
+    - !Equals [!Ref NumberOfPrivateSubnetsInVpc, 5]
+    - !Equals [!Ref NumberOfPrivateSubnetsInVpc, 6]
+
+  CreateMountTarget4: !Or
+    - !Equals [!Ref NumberOfPrivateSubnetsInVpc, 4]
+    - !Equals [!Ref NumberOfPrivateSubnetsInVpc, 5]
+    - !Equals [!Ref NumberOfPrivateSubnetsInVpc, 6]
+
+  CreateMountTarget5: !Or
+    - !Equals [!Ref NumberOfPrivateSubnetsInVpc, 5]
+    - !Equals [!Ref NumberOfPrivateSubnetsInVpc, 6]
+
+  CreateMountTarget6: !Equals [!Ref NumberOfPrivateSubnetsInVpc, 6]
+
+
+#-----------------------------------------------------------
+# Resources
+#-----------------------------------------------------------
+
+Resources:
+
+  #-----------------------------------------------------------
+  # The following resources are used to create an EFS file
+  # system and mount targets in the specified subnets.
+  #-----------------------------------------------------------
+  FileSystem:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      Encrypted: true
+      LifecyclePolicies: 
+        - TransitionToIA: AFTER_30_DAYS
+      FileSystemTags:
+        - Key: Name
+          Value: Shared file system
+
+  FileSystemSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allows ingress from the VPC
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: 6
+          FromPort: 2049
+          ToPort: 2049
+          CidrIp: !Ref IngressCidrBlock
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: Shared file system
+
+  #-----------------------------------------------------------
+  # Mount Target 1
+  #-----------------------------------------------------------
+  MountTarget1: 
+    Type: AWS::EFS::MountTarget
+    Condition: CreateMountTarget1
+    Properties: 
+      FileSystemId: !Ref FileSystem
+      SubnetId: !Select [0, !Ref PrivateSubnets]
+      SecurityGroups: 
+        - !Ref FileSystemSecurityGroup
+
+  #-----------------------------------------------------------
+  # Mount Target 2
+  #-----------------------------------------------------------
+  MountTarget2: 
+    Type: AWS::EFS::MountTarget
+    Condition: CreateMountTarget2
+    Properties: 
+      FileSystemId: !Ref FileSystem
+      SubnetId: !Select [1, !Ref PrivateSubnets]
+      SecurityGroups: 
+        - !Ref FileSystemSecurityGroup
+
+  #-----------------------------------------------------------
+  # Mount Target 3
+  #-----------------------------------------------------------
+  MountTarget3: 
+    Type: AWS::EFS::MountTarget
+    Condition: CreateMountTarget3
+    Properties: 
+      FileSystemId: !Ref FileSystem
+      SubnetId: !Select [2, !Ref PrivateSubnets]
+      SecurityGroups: 
+        - !Ref FileSystemSecurityGroup
+
+  #-----------------------------------------------------------
+  # Mount Target 4
+  #-----------------------------------------------------------
+  MountTarget4: 
+    Type: AWS::EFS::MountTarget
+    Condition: CreateMountTarget4
+    Properties: 
+      FileSystemId: !Ref FileSystem
+      SubnetId: !Select [3, !Ref PrivateSubnets]
+      SecurityGroups: 
+        - !Ref FileSystemSecurityGroup
+
+  #-----------------------------------------------------------
+  # Mount Target 5
+  #-----------------------------------------------------------
+  MountTarget5: 
+    Type: AWS::EFS::MountTarget
+    Condition: CreateMountTarget5
+    Properties: 
+      FileSystemId: !Ref FileSystem
+      SubnetId: !Select [4, !Ref PrivateSubnets]
+      SecurityGroups: 
+        - !Ref FileSystemSecurityGroup
+
+  #-----------------------------------------------------------
+  # Mount Target 6
+  #-----------------------------------------------------------
+  MountTarget6: 
+    Type: AWS::EFS::MountTarget
+    Condition: CreateMountTarget6
+    Properties: 
+      FileSystemId: !Ref FileSystem
+      SubnetId: !Select [5, !Ref PrivateSubnets]
+      SecurityGroups: 
+        - !Ref FileSystemSecurityGroup
+
+  #-----------------------------------------------------------
+  # The following resources are used to conduct periodic backups
+  # for the EFS file system.
+  #-----------------------------------------------------------
+  FileSystemBackupVault:
+    Type: AWS::Backup::BackupVault
+    DeletionPolicy: Retain
+    Properties:
+      BackupVaultName: !Sub efs-${FileSystem}-backup
+      AccessPolicy: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "backup:DeleteBackupVault",
+              "Resource": "*"
+            }
+          ]
+        }
+
+  #-----------------------------------------------------------
+  # File system backup plan
+  #-----------------------------------------------------------
+  FileSystemBackupPlan:
+    Type: AWS::Backup::BackupPlan
+    Properties: 
+      BackupPlan: 
+        BackupPlanName: Daily-Weekly-Monthly
+        BackupPlanRule:
+          - RuleName: DailyBackups
+            TargetBackupVault: !Ref FileSystemBackupVault
+            ScheduleExpression: "cron(0 5 ? * * *)"
+            StartWindowMinutes: 480
+            CompletionWindowMinutes: 10080
+            Lifecycle:
+              DeleteAfterDays: 35
+          - RuleName: WeeklyBackups
+            TargetBackupVault: !Ref FileSystemBackupVault
+            ScheduleExpression: "cron(0 5 ? * 7 *)"
+            StartWindowMinutes: 480
+            CompletionWindowMinutes: 10080
+            Lifecycle:
+              DeleteAfterDays: 90
+          - RuleName: MonthlyBackups
+            TargetBackupVault: !Ref FileSystemBackupVault
+            ScheduleExpression: "cron(0 5 1 * ? *)"
+            StartWindowMinutes: 480
+            CompletionWindowMinutes: 10080
+            Lifecycle:
+              MoveToColdStorageAfterDays: 90
+              DeleteAfterDays: 1825
+
+  #-----------------------------------------------------------
+  # File sysetm bacukp selection
+  #-----------------------------------------------------------
+  FileSystemBackupSelection:
+    Type: AWS::Backup::BackupSelection
+    Properties: 
+      BackupPlanId: !Ref FileSystemBackupPlan
+      BackupSelection: 
+        IamRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/service-role/AWSBackupDefaultServiceRole
+        Resources: 
+          - !Sub arn:aws:elasticfilesystem:${AWS::Region}:${AWS::AccountId}:file-system/${FileSystem}
+        SelectionName: !Sub efs-${FileSystem}-backup
+
+
+#-----------------------------------------------------------
+# Outputs
+#-----------------------------------------------------------
+
+Outputs:
+
+  FileSystemBackupVault:
+    Value: !Ref FileSystemBackupVault
+    Export:
+      Name: !Sub ${AWS::StackName}-FileSystemBackupVault
+
+  FileSystemId:
+    Value: !Ref FileSystem
+    Export:
+      Name: !Sub ${AWS::StackName}-FileSystemId
+
+  MountTarget1IpAddress:
+    Condition: CreateMountTarget1
+    Value: !GetAtt MountTarget1.IpAddress
+    Export:
+      Name: !Sub ${AWS::StackName}-MountTarget1
+
+  MountTarget1Subnet:
+    Condition: CreateMountTarget1
+    Value: !Select [0, !Ref PrivateSubnets]
+    Export:
+      Name: !Sub ${AWS::StackName}-MountTarget1Subnet
+
+  MountTarget2IpAddress:
+    Condition: CreateMountTarget2
+    Value: !GetAtt MountTarget2.IpAddress
+    Export:
+      Name: !Sub ${AWS::StackName}-MountTarget2
+
+  MountTarget2Subnet:
+    Condition: CreateMountTarget2
+    Value: !Select [1, !Ref PrivateSubnets]
+    Export:
+      Name: !Sub ${AWS::StackName}-MountTarget2Subnet
+
+  MountTarget3IpAddress:
+    Condition: CreateMountTarget3
+    Value: !GetAtt MountTarget3.IpAddress
+    Export:
+      Name: !Sub ${AWS::StackName}-MountTarget3
+
+  MountTarget3Subnet:
+    Condition: CreateMountTarget3
+    Value: !Select [2, !Ref PrivateSubnets]
+    Export:
+      Name: !Sub ${AWS::StackName}-MountTarget3Subnet
+
+  MountTarget4IpAddress:
+    Condition: CreateMountTarget4
+    Value: !GetAtt MountTarget4.IpAddress
+    Export:
+      Name: !Sub ${AWS::StackName}-MountTarget4
+
+  MountTarget4Subnet:
+    Condition: CreateMountTarget4
+    Value: !Select [3, !Ref PrivateSubnets]
+    Export:
+      Name: !Sub ${AWS::StackName}-MountTarget4Subnet
+
+  MountTarget5IpAddress:
+    Condition: CreateMountTarget5
+    Value: !GetAtt MountTarget5.IpAddress
+    Export:
+      Name: !Sub ${AWS::StackName}-MountTarget5
+
+  MountTarget5Subnet:
+    Condition: CreateMountTarget5
+    Value: !Select [4, !Ref PrivateSubnets]
+    Export:
+      Name: !Sub ${AWS::StackName}-MountTarget5Subnet
+
+  MountTarget6IpAddress:
+    Condition: CreateMountTarget6
+    Value: !GetAtt MountTarget6.IpAddress
+    Export:
+      Name: !Sub ${AWS::StackName}-MountTarget6
+
+  MountTarget6Subnet:
+    Condition: CreateMountTarget6
+    Value: !Select [5, !Ref PrivateSubnets]
+    Export:
+      Name: !Sub ${AWS::StackName}-MountTarget6Subnet

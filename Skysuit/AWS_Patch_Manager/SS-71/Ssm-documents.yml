@@ -1,0 +1,55 @@
+#=========================================Create a document that runs commands on an EC2 Linux instance=======================
+document: 
+  Type: AWS::SSM::Document
+  Properties:
+    Content:
+      schemaVersion: '2.2'
+      description: 'Run a script on Linux instances.'
+      parameters:
+        commands:
+          type: String
+          description: "(Required) The commands to run or the path to an existing script
+        on the instance."
+          default: 'echo Hello World'
+      mainSteps:
+      - action: aws:runShellScript
+        name: runCommands
+        inputs:
+          timeoutSeconds: '60'
+          runCommand:
+          - "{{ commands }}"
+    DocumentType: Command
+    Name: 'CFN_2.2_command_example'
+	
+# ===========================================Associate an SSM document with an instance============================================
+
+myEC2:
+  Type: AWS::EC2::Instance
+  Properties:
+    ImageId:
+      Ref: myImageId
+    InstanceType: t2.micro
+    SsmAssociations:
+    - DocumentName:
+        Ref: document
+      AssociationParameters:
+      - Key: directoryId
+        Value:
+        - Ref: myDirectory
+      - Key: directoryName
+        Value:
+        - testDirectory.example.com
+      - Key: dnsIpAddresses
+        Value:
+          Fn::GetAtt:
+          - myDirectory
+          - DnsIpAddresses
+    IamInstanceProfile:
+      Ref: myInstanceProfile
+    NetworkInterfaces:
+    - DeviceIndex: '0'
+      AssociatePublicIpAddress: 'true'
+      SubnetId:
+        Ref: mySubnet
+    KeyName:
+      Ref: myKeyName

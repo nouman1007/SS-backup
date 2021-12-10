@@ -1,0 +1,120 @@
+#===============================================================================
+# Attach IAM Instance Profile & Assign Tag as Patch Group for patching.
+# 
+#
+# (c) Enquizit, Inc 2019
+# v1.0 2020-07-15
+#================================================================================
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Attach IAM Instance Profile & Assign Tag as Patch Group for patching 
+###################################################
+#
+# CloudFormation Interface Metadata
+#
+###################################################
+Metadata:
+
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Intance profile information
+      Parameters:
+      - pIamInstanceProfileName
+      - pIntancesName
+      
+    - Label:
+        default: Tag Value for Patch Group
+      Parameters:
+      - pTagValue
+
+    ParameterLabels:
+      pIamInstanceProfileName: 
+        default: Iam Instance Profile Name
+      pTagValue:
+        default : Value for Patch Group
+      pIntancesName:
+        default : Intances Name
+        
+###################################################
+#
+# Template Parameter Definitions
+#
+###################################################
+Parameters: 
+
+  pIamInstanceProfileName: 
+    Type: String
+    Default: IAMrole-RootInstanceProfile-XDUJK3N21TC4
+    Description: Enter Iam Instance Profile Name
+ 
+  pTagValue:
+    Type :  String
+    Default: Linux
+    Description: Enter Value of tag:Patch Group
+    
+  pIntancesName:
+    Type :  String
+    Default: ssm-instances
+    Description: Enter the name Intances 
+    
+ ###################################################
+#
+# Resource definitions
+#
+###################################################
+Resources:
+
+      
+ # Custom lambda that configure cur report
+  rIntanceProfileLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt rCURLambdaExRole.Arn
+      Code: '.\Lambda\patch_manager'
+      Runtime: python3.7
+      
+   # Lambda execution Role   
+  rCURLambdaExRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AmazonEC2FullAccess
+        - arn:aws:iam::aws:policy/IAMFullAccess
+      # Policies:
+      # - PolicyName: policyforssm
+        # PolicyDocument:
+          # Version: '2012-10-17'
+          # Statement:
+          # - Action:
+            # - ec2::*
+            # Effect: Allow
+            # Resource:
+            # - "*"   # reviewnotes: can this be norrowed in scope?
+                
+   # Custom Resource         
+  rCURReportResource:
+    Type: "Custom::instanceprofile"
+    Properties:
+      ServiceToken: !GetAtt rIntanceProfileLambda.Arn
+      iaminstanceprofilename:
+        Ref: pIamInstanceProfileName
+        
+      tagvalue:
+        Ref: pTagValue
+        
+      instancesname:
+        Ref: pIntancesName
+        

@@ -1,0 +1,651 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: CloudFormation Template to deploy inspector.
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Inspector Settings
+      Parameters:
+      - TargetName
+      - TemplateName
+      - InspectorSchedule
+      - NotificationEmailAddress
+      - Duration
+    - Label:
+        default: Rules Packages.  Note that the Network Reachability Rules Package
+          is included by default.
+      Parameters:
+      - UseCVERulesPackage
+      - UseBestPracticesRulesPackage
+      - UseCISRulesPackage
+    - Label:
+        default: Sns Topic
+      Parameters:
+      - pSnsTopicName
+      - InspectorReportTopicName
+    ParameterLabels:
+      LinuxTargetName:
+        default: Linux Target Name
+      LinuxTemplateName:
+        default: Linux Template Name
+      WindowsTargetName:
+        default: Windows Target Name
+      WindowsTemplateName:
+        default: Windows Template Name
+      InspectorSchedule:
+        default: Scheduled Run Times
+      NotificationEmailAddress:
+        default: Notification Email Address
+      Duration:
+        default: Run Duration
+      UseCVERulesPackage:
+        default: CVE Rules Package
+      UseBestPracticesRulesPackage:
+        default: Best Practices Package
+      UseCISRulesPackage:
+        default: CIS Rules Package
+      pSnsTopicName:
+        default: sns topic name
+      InspectorReportTopicName:
+        default: sns Report topic name
+Parameters:
+  LinuxTargetName:
+    Description: Name that will be used to label the linux target group for Inspector.
+    Type: String
+  WindowsTargetName:
+    Description: Name that will be used to label the windows target group for Inspector.
+    Type: String
+  LinuxTemplateName:
+    Description: Name that will be used to label the linux Inspector assessment template.
+    Type: String
+  WindowsTemplateName:
+    Description: Name that will be used to label the windows Inspector assessment
+      template.
+    Type: String
+  InspectorSchedule:
+    Description: Cron schedule defining how frequently Inspector will run. Format
+      for weekly run is - cron(min hr day-of-month month day-of-week yr).  Time is
+      UTC.
+    Type: String
+    Default: cron(0 5 ? * SAT *)
+  NotificationEmailAddress:
+    Description: Notification email address used to receive Inspector assessment run
+      completion notifications.
+    Type: String
+  Duration:
+    Description: Length of time (in seconds) Inspector should run for (60 minutes
+      - 3600 seconds is recommended)
+    Type: String
+    Default: 3600
+  UseCVERulesPackage:
+    Description: Should the assessment template include the CVE Rules Package?  Yes
+      or No?
+    Type: String
+    Default: 'Yes'
+    AllowedValues:
+    - 'Yes'
+    - 'No'
+  UseBestPracticesRulesPackage:
+    Description: Should the assessment template include the Security Best Practices
+      Rule Package?  Yes for only linux instances.
+    Type: String
+    Default: 'Yes'
+    AllowedValues:
+    - 'Yes'
+    - 'No'
+  UseCISRulesPackage:
+    Description: Should the assessment template include the CIS Rules Package Package?  Yes
+      or No?
+    Type: String
+    Default: 'Yes'
+    AllowedValues:
+    - 'Yes'
+    - 'No'
+  ResourceTagKey:
+    Description: Key to identify the AWS resource that make up the assessment target.
+    Type: String
+    Default: inspectorgroup
+  ResourceTagValueForLinux:
+    Description: Name to group the linux target instances for the given resource tag
+      key.
+    Type: String
+    Default: linux
+  ResourceTagValueForWindows:
+    Description: Name to group the windows target instances for the given resource
+      tag key.
+    Type: String
+    Default: windows
+  pSnsTopicName:
+    Type: String
+    Default: InspectorRunNotification
+    Description: Enter Sns Topic Name
+  InspectorReportTopicName:
+    Type: String
+    Default: InspectorReportNotification
+    Description: Enter Report Sns Topic Name
+Conditions:
+  NotificationEmailAddressIsProvided:
+    Fn::Not:
+    - Fn::Equals:
+      - Ref: NotificationEmailAddress
+      - ''
+  IncludeCVERulesPackage:
+    Fn::Equals:
+    - Ref: UseCVERulesPackage
+    - 'Yes'
+  IncludeSecurityBestPracticesRulesPackage:
+    Fn::Equals:
+    - Ref: UseBestPracticesRulesPackage
+    - 'Yes'
+  IncludeCISRulesPackage:
+    Fn::Equals:
+    - Ref: UseCISRulesPackage
+    - 'Yes'
+Mappings:
+  InspectorSettings:
+    ap-northeast-1:
+      CVERulesPackage: arn:aws:inspector:ap-northeast-1:406045910587:rulespackage/0-gHP9oWNT
+      CISRulesPackage: arn:aws:inspector:ap-northeast-1:406045910587:rulespackage/0-7WNjqgGu
+      SecurityBestPracticesRulesPackage: arn:aws:inspector:ap-northeast-1:406045910587:rulespackage/0-bBUQnxMq
+      ServiceAccountArn: arn:aws:iam::406045910587:root
+    ap-northeast-2:
+      CVERulesPackage: arn:aws:inspector:ap-northeast-2:526946625049:rulespackage/0-PoGHMznc
+      CISRulesPackage: arn:aws:inspector:ap-northeast-2:526946625049:rulespackage/0-T9srhg1z
+      SecurityBestPracticesRulesPackage: arn:aws:inspector:ap-northeast-2:526946625049:rulespackage/0-2WRpmi4n
+      ServiceAccountArn: arn:aws:iam::526946625049:root
+    ap-south-1:
+      CVERulesPackage: arn:aws:inspector:ap-south-1:162588757376:rulespackage/0-LqnJE9dO
+      CISRulesPackage: arn:aws:inspector:ap-south-1:162588757376:rulespackage/0-PSUlX14m
+      SecurityBestPracticesRulesPackage: arn:aws:inspector:ap-south-1:162588757376:rulespackage/0-fs0IZZBj
+      ServiceAccountArn: arn:aws:iam::162588757376:root
+    ap-southeast-1:
+      CVERulesPackage: NotSupported
+      CISRulesPackage: NotSupported
+      SecurityBestPracticesRulesPackage: NotSupported
+      ServiceAccountArn: NotSupported
+    ap-southeast-2:
+      CVERulesPackage: arn:aws:inspector:ap-southeast-2:454640832652:rulespackage/0-D5TGAxiR
+      CISRulesPackage: arn:aws:inspector:ap-southeast-2:454640832652:rulespackage/0-Vkd2Vxjq
+      SecurityBestPracticesRulesPackage: arn:aws:inspector:ap-southeast-2:454640832652:rulespackage/0-asL6HRgN
+      ServiceAccountArn: arn:aws:iam::454640832652:root
+    ca-central-1:
+      CVERulesPackage: NotSupported
+      CISRulesPackage: NotSupported
+      SecurityBestPracticesRulesPackage: NotSupported
+      ServiceAccountArn: NotSupported
+    eu-central-1:
+      CVERulesPackage: arn:aws:inspector:eu-central-1:537503971621:rulespackage/0-wNqHa8M9
+      CISRulesPackage: arn:aws:inspector:eu-central-1:537503971621:rulespackage/0-nZrAVuv8
+      SecurityBestPracticesRulesPackage: arn:aws:inspector:eu-central-1:537503971621:rulespackage/0-ZujVHEPB
+      ServiceAccountArn: arn:aws:iam::537503971621:root
+    eu-west-1:
+      CVERulesPackage: arn:aws:inspector:eu-west-1:357557129151:rulespackage/0-ubA5XvBh
+      CISRulesPackage: arn:aws:inspector:eu-west-1:357557129151:rulespackage/0-sJBhCr0F
+      SecurityBestPracticesRulesPackage: arn:aws:inspector:eu-west-1:357557129151:rulespackage/0-SnojL3Z6
+      ServiceAccountArn: arn:aws:iam::357557129151:root
+    eu-west-2:
+      CVERulesPackage: NotSupported
+      CISRulesPackage: NotSupported
+      SecurityBestPracticesRulesPackage: NotSupported
+      ServiceAccountArn: NotSupported
+    eu-west-3:
+      CVERulesPackage: NotSupported
+      CISRulesPackage: NotSupported
+      SecurityBestPracticesRulesPackage: NotSupported
+      ServiceAccountArn: NotSupported
+    sa-east-1:
+      CVERulesPackage: NotSupported
+      CISRulesPackage: NotSupported
+      SecurityBestPracticesRulesPackage: NotSupported
+      ServiceAccountArn: NotSupported
+    us-east-1:
+      CVERulesPackage: arn:aws:inspector:us-east-1:316112463485:rulespackage/0-gEjTy7T7
+      CISRulesPackage: arn:aws:inspector:us-east-1:316112463485:rulespackage/0-rExsr2X8
+      SecurityBestPracticesRulesPackage: arn:aws:inspector:us-east-1:316112463485:rulespackage/0-R01qwB5Q
+      NetworkReachabilityRulesPackage: arn:aws:inspector:us-east-1:316112463485:rulespackage/0-PmNV0Tcd
+      ServiceAccountArn: arn:aws:iam::316112463485:root
+    us-east-2:
+      CVERulesPackage: arn:aws:inspector:us-east-2:646659390643:rulespackage/0-JnA8Zp85
+      CISRulesPackage: arn:aws:inspector:us-east-2:646659390643:rulespackage/0-m8r61nnh
+      SecurityBestPracticesRulesPackage: arn:aws:inspector:us-east-2:646659390643:rulespackage/0-AxKmMHPX
+      NetworkReachabilityRulesPackage: arn:aws:inspector:us-east-2:646659390643:rulespackage/0-cE4kTR30
+      ServiceAccountArn: arn:aws:iam::646659390643:root
+    us-gov-west-1:
+      CVERulesPackage: NotSupported
+      CISRulesPackage: NotSupported
+      SecurityBestPracticesRulesPackage: NotSupported
+      ServiceAccountArn: NotSupported
+    us-west-1:
+      CVERulesPackage: arn:aws:inspector:us-west-1:166987590008:rulespackage/0-TKgzoVOa
+      CISRulesPackage: arn:aws:inspector:us-west-1:166987590008:rulespackage/0-xUY8iRqX
+      SecurityBestPracticesRulesPackage: arn:aws:inspector:us-west-1:166987590008:rulespackage/0-byoQRFYm
+      ServiceAccountArn: arn:aws:iam::166987590008:root
+    us-west-2:
+      CVERulesPackage: arn:aws:inspector:us-west-2:758058086616:rulespackage/0-9hgA516p
+      CISRulesPackage: arn:aws:inspector:us-west-2:758058086616:rulespackage/0-H5hpSawc
+      SecurityBestPracticesRulesPackage: arn:aws:inspector:us-west-2:758058086616:rulespackage/0-JJOtZiqQ
+      ServiceAccountArn: arn:aws:iam::758058086616:root
+Resources:
+  ConfigureInspectorAssociation:
+    Type: AWS::SSM::Association
+    Properties:
+      Name: AmazonInspector-ManageAWSAgent
+      AssociationName: ManageInspectorAgent
+      Parameters:
+        Operation:
+        - Install
+      Targets:
+      - Key: InstanceIds
+        Values:
+        - '*'
+      ScheduleExpression: rate(7 days)
+  InspectorNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: Inspector
+      TopicName:
+        Ref: pSnsTopicName
+  InspectorNotificationTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            AWS:
+              Fn::FindInMap:
+              - InspectorSettings
+              - Ref: AWS::Region
+              - ServiceAccountArn
+          Action: sns:Publish
+          Resource:
+            Ref: InspectorNotificationTopic
+      Topics:
+      - Ref: InspectorNotificationTopic
+  InspectorReportTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: Inspector
+      TopicName:
+        Ref: InspectorReportTopicName
+  InspectorReportSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: NotificationEmailAddressIsProvided
+    Properties:
+      TopicArn:
+        Ref: InspectorReportTopic
+      Endpoint:
+        Ref: NotificationEmailAddress
+      Protocol: email
+  InspectorReportNotificationTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action: sns:Publish
+          Resource:
+            Ref: InspectorReportTopic
+      Topics:
+      - Ref: InspectorReportTopic
+  LinuxInspectorAssessmentTarget:
+    Type: AWS::Inspector::AssessmentTarget
+    Properties:
+      AssessmentTargetName:
+        Ref: LinuxTargetName
+      ResourceGroupArn:
+        Ref: Linuxresourcegroup
+  Linuxresourcegroup:
+    Type: AWS::Inspector::ResourceGroup
+    Properties:
+      ResourceGroupTags:
+      - Key:
+          Ref: ResourceTagKey
+        Value:
+          Ref: ResourceTagValueForLinux
+  WindowsInspectorAssessmentTarget:
+    Type: AWS::Inspector::AssessmentTarget
+    Properties:
+      AssessmentTargetName:
+        Ref: WindowsTargetName
+      ResourceGroupArn:
+        Ref: Windowsresourcegroup
+  Windowsresourcegroup:
+    Type: AWS::Inspector::ResourceGroup
+    Properties:
+      ResourceGroupTags:
+      - Key:
+          Ref: ResourceTagKey
+        Value:
+          Ref: ResourceTagValueForWindows
+  LinuxInspectorTemplate:
+    Type: AWS::Inspector::AssessmentTemplate
+    Properties:
+      AssessmentTargetArn:
+        Ref: LinuxInspectorAssessmentTarget
+      AssessmentTemplateName:
+        Ref: LinuxTemplateName
+      DurationInSeconds:
+        Ref: Duration
+      RulesPackageArns:
+      - Fn::FindInMap:
+        - InspectorSettings
+        - Ref: AWS::Region
+        - NetworkReachabilityRulesPackage
+      - Fn::If:
+        - IncludeCVERulesPackage
+        - Fn::FindInMap:
+          - InspectorSettings
+          - Ref: AWS::Region
+          - CVERulesPackage
+        - Ref: AWS::NoValue
+      - Fn::If:
+        - IncludeSecurityBestPracticesRulesPackage
+        - Fn::FindInMap:
+          - InspectorSettings
+          - Ref: AWS::Region
+          - SecurityBestPracticesRulesPackage
+        - Ref: AWS::NoValue
+      - Fn::If:
+        - IncludeCISRulesPackage
+        - Fn::FindInMap:
+          - InspectorSettings
+          - Ref: AWS::Region
+          - CISRulesPackage
+        - Ref: AWS::NoValue
+  WindowsInspectorTemplate:
+    Type: AWS::Inspector::AssessmentTemplate
+    Properties:
+      AssessmentTargetArn:
+        Ref: WindowsInspectorAssessmentTarget
+      AssessmentTemplateName:
+        Ref: WindowsTemplateName
+      DurationInSeconds:
+        Ref: Duration
+      RulesPackageArns:
+      - Fn::FindInMap:
+        - InspectorSettings
+        - Ref: AWS::Region
+        - NetworkReachabilityRulesPackage
+      - Fn::If:
+        - IncludeCVERulesPackage
+        - Fn::FindInMap:
+          - InspectorSettings
+          - Ref: AWS::Region
+          - CVERulesPackage
+        - Ref: AWS::NoValue
+      - Fn::If:
+        - IncludeCVERulesPackage
+        - Fn::FindInMap:
+          - InspectorSettings
+          - Ref: AWS::Region
+          - CISRulesPackage
+        - Ref: AWS::NoValue
+  ScheduledInspectorJobRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - events.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+      - PolicyName: StartAssessmentRun
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action:
+            - inspector:StartAssessmentRun
+            Resource:
+            - '*'
+  ScheduledInspectorJob:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Run Inspector Assessment Daily
+      ScheduleExpression:
+        Ref: InspectorSchedule
+      State: ENABLED
+      Targets:
+      - Arn:
+          Fn::GetAtt:
+          - LinuxInspectorTemplate
+          - Arn
+        RoleArn:
+          Fn::GetAtt:
+          - ScheduledInspectorJobRole
+          - Arn
+        Id: TargetRunV1
+      - Arn:
+          Fn::GetAtt:
+          - WindowsInspectorTemplate
+          - Arn
+        RoleArn:
+          Fn::GetAtt:
+          - ScheduledInspectorJobRole
+          - Arn
+        Id: TargetRunV2
+  CreateInspectorEventSubscriptionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+      - PolicyName: CreateInspectorResources
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - inspector:SubscribeToEvent
+            Resource: '*'
+  rLambdaExRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+      - PolicyName: AWSInspectorLambdaPolicy
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action:
+            - inspector:StartAssessmentRun
+            Resource: '*'
+  CreateInspectorEventSubscriptionFunctionLinux:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Subscribe Inspector to CloudWatch Event
+      Handler: subscribe-inspector-to-event.lambda_handler
+      MemorySize: 1024
+      Role:
+        Fn::GetAtt:
+        - CreateInspectorEventSubscriptionRole
+        - Arn
+      Code:
+        S3Bucket: patch-lambda-code
+        S3Key: 13c28d31d8fa1d2c04efaf28a3058c9f
+      Runtime: python3.6
+      Timeout: 10
+      Environment:
+        Variables:
+          assessment_template_arn:
+            Fn::GetAtt:
+            - LinuxInspectorTemplate
+            - Arn
+          assessment_notification_topic_arn:
+            Ref: InspectorNotificationTopic
+  CreateInspectorResources:
+    Type: Custom::CreateInspectorResources
+    DependsOn: CreateInspectorEventSubscriptionFunctionLinux
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+        - CreateInspectorEventSubscriptionFunctionLinux
+        - Arn
+  CreateInspectorEventSubscriptionFunctionWindows:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Subscribe Inspector to CloudWatch Event
+      Handler: subscribe-inspector-to-event.lambda_handler
+      MemorySize: 1024
+      Role:
+        Fn::GetAtt:
+        - CreateInspectorEventSubscriptionRole
+        - Arn
+      Code:
+        S3Bucket: patch-lambda-code
+        S3Key: 13c28d31d8fa1d2c04efaf28a3058c9f
+      Runtime: python3.6
+      Timeout: 10
+      Environment:
+        Variables:
+          assessment_template_arn:
+            Fn::GetAtt:
+            - WindowsInspectorTemplate
+            - Arn
+          assessment_notification_topic_arn:
+            Ref: InspectorNotificationTopic
+  CreateInspectorResourcesWindows:
+    Type: Custom::CreateInspectorResourcesWindows
+    DependsOn: CreateInspectorEventSubscriptionFunctionWindows
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+        - CreateInspectorEventSubscriptionFunctionWindows
+        - Arn
+  rAssessmentTemplateRunFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role:
+        Fn::GetAtt:
+        - rLambdaExRole
+        - Arn
+      Code:
+        S3Bucket: patch-lambda-code
+        S3Key: e8516f9ad8ad57c7d1543b0e63135e2f
+      Runtime: python3.7
+      Timeout: 240
+  rAssessmentTemplateRun:
+    Type: Custom::AWSRunAssessment
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+        - rAssessmentTemplateRunFunction
+        - Arn
+      assessment_template_arn:
+        Fn::GetAtt:
+        - WindowsInspectorTemplate
+        - Arn
+  RespondToInspectorFindingsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+      - PolicyName: InspectorAndSsm
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+            Effect: Allow
+            Action:
+            - inspector:DescribeAssessmentRuns
+            - inspector:DescribeFindings
+            - inspector:ListAssessmentRunAgents
+            - inspector:ListFindings
+            - sns:Publish
+            Resource:
+            - '*'
+  RespondToInspectorAssessmentCompleteFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Lambda to generate a summary report from the Inspector findings
+        and send to SNS
+      Handler: inspector-assessment-complete-report.lambda_handler
+      MemorySize: 1024
+      Role:
+        Fn::GetAtt:
+        - RespondToInspectorFindingsRole
+        - Arn
+      Code:
+        S3Bucket: patch-lambda-code
+        S3Key: 5bbce3ae2f47676861d8ecf5c88d03ff
+      Runtime: python3.6
+      Timeout: 180
+      Environment:
+        Variables:
+          findingsNotificationTopicArn:
+            Ref: InspectorReportTopic
+          findingseverity: High
+          loglevel: INFO
+  RespondToInspectorFindingsNotification:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn:
+        Ref: InspectorNotificationTopic
+      Endpoint:
+        Fn::GetAtt:
+        - RespondToInspectorAssessmentCompleteFunction
+        - Arn
+      Protocol: lambda
+  RespondToInspectorFindingsPolicy:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Ref: RespondToInspectorAssessmentCompleteFunction
+      Principal: sns.amazonaws.com
+      Action: lambda:InvokeFunction
+      SourceArn:
+        Ref: InspectorNotificationTopic
+Outputs:
+  LinuxInspectorAssessmentTarget:
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-LinuxInspectorAssessmentTarget
+    Value:
+      Ref: LinuxInspectorAssessmentTarget
+  LinuxInspectorTemplate:
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-LinuxInspectorTemplate
+    Value:
+      Ref: LinuxInspectorTemplate

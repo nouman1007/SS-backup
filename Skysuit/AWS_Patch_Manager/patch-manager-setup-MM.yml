@@ -1,0 +1,506 @@
+#===============================================================================
+# Template: Patch Manager Setup
+#===============================================================================
+AWSTemplateFormatVersion: 2010-09-09
+Description: "Patch Manager Setup"
+
+#==================================================
+# Parameters
+#==================================================
+Parameters:
+    Organization:
+       Type: String
+       Default: Mathematica
+
+    CreateTestFleet:
+        Description: NOTE The instances and some network resources will incur a charge for their use.
+        Type: String
+        AllowedValues:
+          - "Yes"
+          - "No"
+        Default: "Yes"
+
+    MaintenanceWindowScheduleProd:
+        Type: String
+        Default: cron(0 0 0 ? * SAT *)
+
+    MaintenanceWindowScheduleNonProd:
+        Type: String
+        Default: cron(0 0 7 ? * MON *)
+
+    WindowsTags:
+        Type: CommaDelimitedList
+        Default: Windows Dev, Windows Stage, Windows Production
+
+    LinuxTags:
+        Type: CommaDelimitedList
+        Default: Linux Dev, Linux Stage, Linux Production
+
+    MaintenanceWindowTargetTagsProd:
+        Type: CommaDelimitedList
+        Default: Linux Production, Windows Production
+
+    MaintenanceWindowTargetTagsNonProd:
+        Type: CommaDelimitedList
+        Default: Linux Stage, Linux Dev, Windows Stage, Windows Dev
+
+    LatestLinuxAmiId:
+        Description: Default value to get the latest Linux AMI ID from parameter store.  Do not modify this.
+        Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+        Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+
+    LatestWindowsAmiId:
+        Description: Default value to get the latest Windows AMI ID from parameter store.  Do not modify this.
+        Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+        Default: '/aws/service/ami-windows-latest/Windows_Server-2012-R2_RTM-English-64Bit-Base'
+
+    NotificationEmailAddress:
+        Type: String
+
+#==================================================
+# Metadata - Setup User Interface
+#==================================================
+Metadata:
+
+  AWS::CloudFormation::Interface:
+
+    ParameterGroups:
+      - Label:
+          default: Organization
+        Parameters:
+          - Organization
+
+      - Label:
+          default: Maintenance Windows
+        Parameters:
+          - MaintenanceWindowScheduleProd
+          - MaintenanceWindowScheduleNonProd
+          
+      - Label:
+          default: Tags to identify EC2 Targets.  Note the set defined by (Windows Tags, Linux Tags) must be the same as the set defined by (Production window tags, Non-production window tags)
+        Parameters:
+          - WindowsTags
+          - LinuxTags
+          - MaintenanceWindowTargetTagsProd
+          - MaintenanceWindowTargetTagsNonProd
+          
+      - Label:
+          default: Email for patch status notification
+        Parameters:
+          - NotificationEmailAddress
+
+      - Label:
+          default: Optionally create a sample fleet of 4 EC2 instances to test
+        Parameters:
+          - CreateTestFleet
+
+      - Label:
+          default: |
+            These reference the latest Windows and Linux AMIs.  DO NOT CHANGE THESE VALUES.
+        Parameters:
+          - LatestLinuxAmiId
+          - LatestWindowsAmiId
+
+    ParameterLabels:
+      Organization:
+        default: "Company name"
+      CreateTestFleet:
+        default: "Create test fleet"
+      MaintenanceWindowScheduleProd:
+        default: "Maintenance window for production. Pattern for cron expression is cron(ss mm hh ? * DAY *)."
+      MaintenanceWindowScheduleNonProd:
+        default: "Maintenance window for non-prod. Pattern for cron expression is cron(ss mm hh ? * DAY *)."
+      MaintenanceWindowTargetTagsProd:
+        default: "Tags to identify prod servers.  Patch manager uses the key 'Patch Group'"
+      MaintenanceWindowTargetTagsNonProd:
+        default: "Tags to identify nonprod servers.  Patch manager uses the key 'Patch Group'"
+      MaintenanceWindowTargetTagsNonProd:
+        default: "Tags to identify Windows servers.  Patch manager uses the key 'Patch Group'"
+      MaintenanceWindowTargetTagsNonProd:
+        default: "Tags to identify Linux servers.  Patch manager uses the key 'Patch Group'"
+      LatestLinuxAmiId:
+        default: "Latest Linux ami"
+      LatestWindowsAmiId:
+        default: "Latest Windows ami"
+      NotificationEmailAddress:
+        default: "Notification email address"
+
+#==================================================
+# Conditions
+#==================================================
+Conditions:
+
+  CreateFleet: !Equals [!Ref CreateTestFleet, "Yes"]
+
+#==================================================
+# Resources
+#==================================================
+Resources:
+
+  #==================================================
+  # Define the Patch Baselines
+  #==================================================
+  DefaultLinuxBaseline:
+    Type: AWS::SSM::PatchBaseline
+    Properties:
+      Name: !Join [ "-", [ !Ref Organization, DefaultLinuxPatchBaseline]]
+      Description: !Join [ " ", [Default Linux Patch Baseline for, !Ref Organization]]
+      OperatingSystem: AMAZON_LINUX_2
+      PatchGroups: !Ref LinuxTags
+      ApprovalRules:
+        PatchRules:
+        - PatchFilterGroup:
+            PatchFilters:
+            - Values:
+              - "*"
+              Key: SEVERITY
+            - Values:
+              - Security
+              Key: CLASSIFICATION
+            - Values:
+              - "*"
+              Key: PRODUCT
+          ApproveAfterDays: 7
+          ComplianceLevel: CRITICAL
+
+  DefaultWindowsBaseline:
+    Type: AWS::SSM::PatchBaseline
+    Properties:
+      Name: !Join [ "-", [ !Ref Organization, DefaultWindowsPatchBaseline]]
+      Description: !Join [ " ", [Default Windows Patch Baseline for, !Ref Organization]]
+      OperatingSystem: WINDOWS
+      PatchGroups: !Ref WindowsTags
+      ApprovalRules:
+        PatchRules:
+        - PatchFilterGroup:
+            PatchFilters:
+            - Values:
+              - "*"
+              Key: MSRC_SEVERITY
+            - Values:
+              - SecurityUpdates
+              - CriticalUpdates
+              Key: CLASSIFICATION
+            - Values:
+              - "*"
+              Key: PRODUCT
+          ApproveAfterDays: 7
+          ComplianceLevel: CRITICAL
+
+  #==================================================
+  # Define the maintenance windows when patches
+  # will be applied
+  #==================================================
+  MaintenanceWindowProd:
+    Type: AWS::SSM::MaintenanceWindow
+    Properties:
+      Name: !Join [ "-", [ !Ref Organization, DefaultProdMaintenanceWindow]]
+      Description: !Join [ " ", [Default Production Systems Maintenance Window for, !Ref Organization]]
+      AllowUnassociatedTargets: false
+      Schedule: !Ref MaintenanceWindowScheduleProd
+      Duration: 4
+      Cutoff: 1
+      ScheduleTimezone: US/Eastern
+
+  MaintenanceWindowNonProd:
+    Type: AWS::SSM::MaintenanceWindow
+    Properties:
+      Name: !Join [ "-", [ !Ref Organization, DefaultNonProdMaintenanceWindow]]
+      Description: !Join [ " ", [Default Non-Production Systems Maintenance Window for, !Ref Organization]]
+      AllowUnassociatedTargets: false
+      Schedule: !Ref MaintenanceWindowScheduleNonProd
+      Duration: 4
+      Cutoff: 1
+      ScheduleTimezone: US/Eastern
+
+  #==================================================
+  # The target(s) defines the managed instances for
+  # the maintenance windows
+  #==================================================
+  ProdMaintenanceWindowTarget:
+    Type: AWS::SSM::MaintenanceWindowTarget
+    Properties:
+      Name: ProductionServers
+      Description: Production Maintenance Window Targets
+      WindowId: !Ref MaintenanceWindowProd
+      ResourceType: INSTANCE
+      Targets:
+        - Key: tag:Patch Group
+          Values: !Ref MaintenanceWindowTargetTagsProd
+
+
+  NonProdMaintenanceWindowTarget:
+    Type: AWS::SSM::MaintenanceWindowTarget
+    Properties:
+      Name: NonProductionServers
+      Description: Non-Production Maintenance Window Targets
+      WindowId: !Ref MaintenanceWindowNonProd
+      ResourceType: INSTANCE
+      Targets:
+        - Key: tag:Patch Group
+          Values: !Ref MaintenanceWindowTargetTagsNonProd
+
+
+  #==================================================
+  # SSM will use this role during the maintenance window
+  #==================================================
+  MaintenanceWindowServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join [ "", [ !Ref Organization, PatchingRole]]
+      Description: !Join [" ", [Role to perform regular patching, !Ref Organization]]
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ssm.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonSSMMaintenanceWindowRole
+      Policies:
+        - PolicyName: PassRole
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - '*'
+
+  #==================================================
+  # SSM will use this role for SNS Notification
+  #==================================================
+  SNSServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join [ "", [ !Ref Organization, SNSRole]]
+      Description: !Join [" ", [Role to send notifications during patching for, !Ref Organization]]
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ssm.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSNSFullAccess
+      Policies:
+        - PolicyName: PassRole
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - '*'
+
+  #==================================================
+  # SNS Topic to use for email notifications
+  #==================================================
+  PatchNotificationSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+        Subscription:
+            - Endpoint: !Ref NotificationEmailAddress
+              Protocol: email
+
+  #==================================================
+  # S3 bucket for saved SSM artifacts
+  #==================================================
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      AccessControl: Private
+
+  #==================================================
+  # Allow the SSM service to use this bucket
+  #==================================================
+  ArtifactBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    DeletionPolicy: Retain
+    Properties:
+      Bucket: !Ref ArtifactBucket
+      PolicyDocument:
+        Version: 2008-10-17
+        Statement:
+          - Sid: ArtifactBucketPermissionsCheck
+            Effect: Allow
+            Resource: !Sub ${ArtifactBucket.Arn}
+            Principal:
+              Service: ssm.amazonaws.com
+            Action:
+              - s3:GetBucketAcl
+          - Sid: ArtifactBucketDelivery
+            Effect: Allow
+            Resource: !Sub ${ArtifactBucket.Arn}/*
+            Principal:
+              Service: ssm.amazonaws.com
+            Action:
+              - s3:PutObject
+            Condition:
+              StringEquals:
+                s3:x-amz-acl: bucket-owner-full-control
+
+  #==================================================
+  # Create patching tasks for the maintenance windows
+  #==================================================
+  ProdMaintenanceWindowTask:
+    Type: AWS::SSM::MaintenanceWindowTask
+    Properties:
+      Name: ExecutePatchBaseline
+      Description: Execute Patch Baseline
+      ServiceRoleArn: !GetAtt MaintenanceWindowServiceRole.Arn
+      TaskArn: AWS-RunPatchBaseline
+      MaxErrors: 100%
+      MaxConcurrency: 100%
+      WindowId: !Ref MaintenanceWindowProd
+      Priority: 1
+      TaskType: RUN_COMMAND
+      TaskInvocationParameters:
+        MaintenanceWindowRunCommandParameters:
+          Comment: Runs patch baseline
+          TimeoutSeconds: 600
+          Parameters: {"Operation":["Install"]}
+          OutputS3BucketName: !Ref ArtifactBucket
+          ServiceRoleArn: !GetAtt SNSServiceRole.Arn
+          NotificationConfig:
+            NotificationArn: !Ref PatchNotificationSNSTopic
+            NotificationEvents:
+                - All
+            NotificationType: Invocation
+      Targets:
+      - Values:
+        - !Ref ProdMaintenanceWindowTarget
+        Key: WindowTargetIds
+
+  NonProdMaintenanceWindowTask:
+    Type: AWS::SSM::MaintenanceWindowTask
+    Properties:
+      Name: ExecutePatchBaseline
+      Description: Execute Patch Baseline
+      ServiceRoleArn: !GetAtt MaintenanceWindowServiceRole.Arn
+      TaskArn: AWS-RunPatchBaseline
+      MaxErrors: 100%
+      MaxConcurrency: 100%
+      WindowId: !Ref MaintenanceWindowNonProd
+      Priority: 1
+      TaskType: RUN_COMMAND
+      TaskInvocationParameters:
+        MaintenanceWindowRunCommandParameters:
+          Comment: Runs patch baseline
+          TimeoutSeconds: 600
+          Parameters: {"Operation":["Install"]}
+          OutputS3BucketName: !Ref ArtifactBucket
+          ServiceRoleArn: !GetAtt SNSServiceRole.Arn
+          NotificationConfig:
+            NotificationArn: !Ref PatchNotificationSNSTopic
+            NotificationEvents:
+                - All
+            NotificationType: Invocation
+
+      Targets:
+      - Values:
+        - !Ref NonProdMaintenanceWindowTarget
+        Key: WindowTargetIds
+
+  #==================================================
+  # Sample Fleet, if requested
+  #==================================================
+
+
+  #==================================================
+  # IAM role to be used by the application instances
+  # The role needs to interact with SSM for remote
+  # command execution.
+  #==================================================
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Condition: CreateFleet
+    Properties:
+      RoleName: !Join [ "", [ !Ref Organization, EC2RoleforSSM]]
+      Description: !Join [" ", [EC2 Role for SSM for, !Ref Organization]]
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ec2.amazonaws.com]
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+
+  #==================================================
+  # IAM profile to be used by the application instances
+  #==================================================
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Condition: CreateFleet
+    Properties:
+      Roles: [!Ref InstanceRole]
+
+  #==================================================
+  # EC2 Fleet
+  # Note, for simplicity, uses default subnet, VPC
+  # security group
+  #==================================================
+  AMZNLinuxInstanceDev:
+    Type: AWS::EC2::Instance
+    Condition: CreateFleet
+    Properties:
+      IamInstanceProfile: !Ref InstanceProfile
+      ImageId: !Ref LatestLinuxAmiId
+      InstanceType: t2.micro
+      Tags:
+        - Key: Name
+          Value: !Join [" ", [!Ref Organization, Sample Fleet - Prod 1]]
+        - Key: Patch Group
+          Value: !Select [ 0, !Ref MaintenanceWindowTargetTagsProd ]
+
+  AMZNLinuxInstanceProd:
+    Type: AWS::EC2::Instance
+    Condition: CreateFleet
+    Properties:
+      IamInstanceProfile: !Ref InstanceProfile
+      ImageId: !Ref LatestLinuxAmiId
+      InstanceType: t2.micro
+      Tags:
+        - Key: Name
+          Value: !Join [" ", [!Ref Organization, Sample Fleet - Non Prod 1]]
+        - Key: Patch Group
+          Value: !Select [ 0, !Ref MaintenanceWindowTargetTagsNonProd ]
+
+  WindowsInstanceStage:
+    Type: AWS::EC2::Instance
+    Condition: CreateFleet
+    Properties:
+      IamInstanceProfile: !Ref InstanceProfile
+      ImageId: !Ref LatestWindowsAmiId
+      InstanceType: t2.micro
+      Tags:
+        - Key: Name
+          Value: !Join [" ", [!Ref Organization, Sample Fleet - Prod 2]]
+        - Key: Patch Group
+          Value: !Select [ 1, !Ref MaintenanceWindowTargetTagsProd ]
+
+  WindowsInstanceProd:
+    Type: AWS::EC2::Instance
+    Condition: CreateFleet
+    Properties:
+      IamInstanceProfile: !Ref InstanceProfile
+      ImageId: !Ref LatestWindowsAmiId
+      InstanceType: t2.micro
+      Tags:
+        - Key: Name
+          Value: !Join [" ", [!Ref Organization, Sample Fleet - Non Prod 2]]
+        - Key: Patch Group
+          Value: !Select [ 1, !Ref MaintenanceWindowTargetTagsNonProd ]

@@ -1,0 +1,1 @@
+1. Move the regex filter to env variable, make sure it should work after packaging the CF templatefile. 

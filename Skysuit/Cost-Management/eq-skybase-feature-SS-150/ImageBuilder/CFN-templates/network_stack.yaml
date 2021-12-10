@@ -1,0 +1,321 @@
+#===============================================================================
+# Deploy Network Components of Image Builder
+# (c) Enquizit, Inc 2019
+# v1.0 2020-02-11
+#================================================================================
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'This CloudFormation Template will create netwrok components for image builder pipeline.'
+#==================================================
+# Parameters
+#==================================================
+Parameters:
+
+  pVPCName:
+    Description: A name that is prefixed to resource names
+    Type: String
+    Default: SS-Image-Builder
+
+  pVpcCIDR:
+    Description: CIDR notation for the VPC
+    Type: String
+    Default: 10.0.0.0/24
+
+  pPublicSubnetCIDR:
+    Description: IP range for Public Subnet 
+    Type: String
+    Default: 10.0.0.0/25
+
+  pPrivateSubnetCIDR:
+    Description: IP range for Private Subnet 
+    Type: String
+    Default: 10.0.0.128/25
+
+  pKeyName:  
+    Description: Keypair name for SSH
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: image-builder                   
+
+  pInstanceProfileName:
+    Description: Instance Profile Name.
+    Type: String
+    Default: SS-instance-profile-test
+
+  pAssumeRoleARN:
+    Description: Provide Assume role arn.
+    Type: String
+
+  pBucketName:
+    Description: Provide name of bucket.
+    Type: String    
+
+
+#====================================================
+#Resources:      Network component for Image Builder
+#===================================================
+
+Resources:
+
+  rVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref pVpcCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Ref pVPCName
+
+  rInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Ref pVPCName
+
+  rInternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref rInternetGateway
+      VpcId: !Ref rVPC
+
+  rPublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref rVPC
+      AvailabilityZone: !Select [ 0, !GetAZs  '' ]
+      CidrBlock: !Ref pPublicSubnetCIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${pVPCName}-Public-Subnet'
+
+  rPrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref rVPC
+      AvailabilityZone: !Select [ 0, !GetAZs  '' ]
+      CidrBlock: !Ref pPrivateSubnetCIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${pVPCName}-Private-Subnet
+
+  rPublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref rVPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${pVPCName}-Public-Route-Table
+
+  rPublicRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref rPublicRouteTable
+      SubnetId: !Ref rPublicSubnet
+
+  rPublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref rPublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref rInternetGateway       
+
+  rEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc 
+
+  rNAT:
+     Type: AWS::EC2::NatGateway
+     Properties:
+        AllocationId: !GetAtt 'rEIP.AllocationId'
+        SubnetId: !Ref rPublicSubnet
+        Tags:
+          - Key: Name
+            Value: NatGateway
+
+  rPrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref rVPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${pVPCName}-Private-Route-Table
+
+  rPrivateRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref rPrivateRouteTable
+      SubnetId: !Ref rPrivateSubnet
+
+  rPrivateRoute:
+    Type: AWS::EC2::Route
+    DependsOn: rNAT
+    Properties:
+      RouteTableId: !Ref rPrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref rNAT
+
+
+#============================================================
+#      Instance Role Profile & S.G for Builder Instance
+#============================================================
+
+  rInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Ref pInstanceProfileName
+      Roles:
+        - !Ref rImageBuilderRole
+
+  rSecGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Allow All Traffic"
+      GroupName: "ALLOW-ALL-Trafic"
+      VpcId: !Ref rVPC
+      SecurityGroupIngress:  
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          FromPort: -1
+          ToPort: -1
+      Tags:
+        - Key: Name
+          Value: SS-Image-Builder-Security-group
+
+  rImageBuilderRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service: 
+                - ec2.amazonaws.com              
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/EC2InstanceProfileForImageBuilder
+
+#---------------------------------------------------
+#         Lambda to share amis across accounts
+#--------------------------------------------------
+
+  rLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.7
+      Role: !GetAtt rLambdaRole.Arn
+      Handler: ami-sharing-accross-accounts.lambda_handler
+      Timeout: '900'
+      Environment:
+        Variables:
+          AssumeRoleArn: !Ref pAssumeRoleARN
+
+      Code: 
+        S3Bucket: !Ref pBucketName
+        S3Key: ami-sharing-accross-accounts.zip
+
+  rLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service: [lambda.amazonaws.com]
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AmazonEC2FullAccess
+        - !Ref rAssumeRolePolicy
+
+  rAssumeRolePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - 
+          Effect: Allow
+          Action:
+          - sts:AssumeRole
+          Resource:
+          - "*" 
+
+#====================================================
+#Outputs:     Exporting resources for other template
+#===================================================
+Outputs:
+
+  VPC:
+    Value: !Ref rVPC
+    Export: 
+      Name:
+        Fn::Sub: "${AWS::StackName}-VPC"
+
+  PublicSubnet:
+    Value: !Ref rPublicSubnet
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-PublicSubnet"
+
+  PrivateSubnet:
+    Value: !Ref rPrivateSubnet
+    Export:
+      Name: 
+        Fn::Sub: "${AWS::StackName}-PrivateSubnet"
+
+  InstanceProfile:
+    Value: !Ref rInstanceProfile
+    Export:
+      Name: 
+        Fn::Sub: "${AWS::StackName}-InstanceProfile"
+
+  SecGroup:
+    Value: 
+      Fn::GetAtt:
+      - rSecGroup
+      - GroupId
+    Export:
+      Name: 
+        Fn::Sub: "${AWS::StackName}-SecurityGroup"
+
+  KeyName:
+    Value: !Ref pKeyName
+    Export:
+      Name: 
+        Fn::Sub: "${AWS::StackName}-KeyName"
+
+
+  
+  ImageBuilderRole:
+    Value: 
+      Fn::GetAtt:
+      - rImageBuilderRole
+      - Arn
+    Export:
+      Name: 
+        Fn::Sub: "${AWS::StackName}-ImageBuilderRole"
+
+  AMISharingLambda:
+    Value:
+      Fn::GetAtt:
+      - rLambda
+      - Arn
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-AmiSharingLambdaArn"
+
+  AmiSharingLambdaName:
+    Value: !Ref rLambda
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-AmiSharingLambdaName"

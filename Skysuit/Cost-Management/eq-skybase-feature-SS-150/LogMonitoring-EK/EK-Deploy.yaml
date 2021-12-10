@@ -1,0 +1,525 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Log Monitoring using ElasticSearch Template
+
+###################################################
+#
+# CloudFormation Interface Metadata
+#
+###################################################
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: General Information
+      Parameters:
+      - pAlertNotificationEmail
+      - pFileSyncSourceBuckets
+
+    - Label:
+        default: ElasticSearch Domain
+      Parameters:
+      - pDomainVersion
+      - pInstanceType
+      - pNodesCount
+      - pMasterNodesCount
+      - pIndex
+
+    ParameterLabels:
+      pAlertNotificationEmail:
+        default: Alert notification subscription email
+      pFileSyncSourceBuckets:
+        default: Delimited source S3 Bucket Arns
+      pDomainVersion:
+        default: ES Domain version 
+      pInstanceType:
+        default: Instance type for ES
+      pNodesCount:
+        default: Cluster Node count
+      pMasterNodesCount:
+        default: Master Nodes cluster count, dedicated master node count should be greater than 1
+      pIndex:
+        default: Index name for ES and Kibana
+
+###################################################
+#
+# Template Parameter Definitions
+#
+###################################################
+Parameters:
+
+  pAlertNotificationEmail:
+    Description: email where replicaiton alerts will be sent to
+    Type: String
+    Default: "hiqbal@enquizit.com"
+
+  pFileSyncSourceBuckets:
+    Description: Comma delimited list of bucket arns for the file sync source buckets
+    Type: CommaDelimitedList
+    Default: "arn:aws:s3:::aws-controltower-logs-376773251456-us-east-1"
+
+  pInstanceType:
+    Type: String
+    Description: Select instance type for cluster
+    AllowedValues: ['r5.large.elasticsearch', 't2.small.elasticsearch', 't2.medium.elasticserach','t2.micro.elasticsearch','m3.medium.elasticsearch','m3.large.elasticsearch','m3.xlarge.elasticsearch','i2.2xlarge.elasticsearch']
+    Default: r5.large.elasticsearch
+
+  pDomainVersion:
+    Type: String
+    Description: Select Version of ES Domain(Latest 7.4)
+    AllowedValues: ['7.4','7.1','6.8', '6.7', '6.5']
+
+  pNodesCount:
+    Type: Number
+    Description: Enter number of nodes
+
+  pMasterNodesCount:
+    Type: Number
+    Description: Enter number for master nodes
+
+  pIndex:
+    Type: String
+    Description: Enter index for ES in small letters
+  
+
+###################################################
+#
+# Resource definitions
+#
+###################################################
+Resources:
+
+  rSyncFilesLambdaExRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service: [lambda.amazonaws.com]
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - !Ref rSyncFilesLambdaExPolicy
+
+  rSyncFilesLambdaExPolicy:      
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Action: [ 'logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents' ]
+          Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:*
+        -
+          Effect: Allow
+          Action:
+            - 's3:GetObject'
+          Resource: !Split # split into a list [s3a/*, s3b/*] . This is a list of s3 objects since GetObject needs objects
+            - ','
+            - !Sub # convert to "s3a/*,s3b/*"
+              - '${joinedstr}/*'
+              - joinedstr: !Join # convert to "s3a/*,s3b"
+                  - '/*,'
+                  - !Ref pFileSyncSourceBuckets    # take in a list. pFileSyncSourceBuckets is commadelimeitedlist e.g: s3a,s3b
+        -
+          Effect: Allow
+          Action:
+            - 's3:ListBucket'
+            - 's3:GetBucketLocation'
+          Resource: !Ref pFileSyncSourceBuckets
+        -
+          Effect: Allow
+          Action:
+            - 'kms:Decrypt'
+            - 'kms:GenerateDataKey'
+          Resource: !Sub arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/* 
+        -
+          Effect: Allow
+          Action:
+            - 'sqs:ReceiveMessage'
+            - 'sqs:DeleteMessage'
+            - 'sqs:GetQueueAttributes'
+            - 'sqs:ChangeMessageVisibility'
+            - 'sqs:GetQueueUrl'
+          Resource: 
+            - !GetAtt rMainSqsQueue.Arn
+            - !GetAtt rDeadLetterSqsQueue.Arn
+        -
+          Effect: Allow
+          Action:
+            - 'lambda:ListEventSourceMappings'
+            - 'lambda:UpdateEventSourceMapping'
+          Resource: "*"
+        -
+          Effect: Allow
+          Action:
+            - 'sns:Publish'
+          Resource: !Ref rFileSyncSNS
+        -
+          Effect: Allow
+          Action:
+            - 'es:ESHttpPost'  
+          Resource: !GetAtt rElasticSearchDomain.DomainArn
+
+  rElasticSearchDomain:
+    Type: AWS::Elasticsearch::Domain
+    Properties:
+      ElasticsearchVersion:
+        Ref: pDomainVersion  
+      AccessPolicies:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              AWS: "*"
+            Action: "es:*"
+            Resource: "*"
+      EBSOptions:
+        EBSEnabled: true
+        Iops: 0
+        VolumeSize: 20
+        VolumeType: "gp2"
+      ElasticsearchClusterConfig:
+        InstanceType:
+          Ref: pInstanceType
+        InstanceCount: 
+          Ref: pNodesCount
+        DedicatedMasterEnabled: "true"
+        DedicatedMasterCount:
+          Ref: pMasterNodesCount
+        DedicatedMasterType:
+          Ref: pInstanceType   
+
+  # Custom lambda that pushes log's data from s3 to elastic search
+  rSyncFilesLambda:
+    Type: AWS::Lambda::Function
+    DependsOn:
+    - rElasticSearchDomain
+    Properties:
+      Description: Lambda function that pushes log's data from s3 to elastic search
+      Handler: sync_files.handler
+      Code: './lambdas/sync_files'
+      MemorySize: 128
+      Role: !GetAtt rSyncFilesLambdaExRole.Arn
+      Runtime: python3.8
+      Environment:
+        Variables:
+          REPLICATION_TARGET_SECRETNAME: !Sub '/${AWS::StackName}/targetaccountcredentials'
+          NOTIFICATION_TOPIC_ARN: !Ref rFileSyncSNS
+          ES_HOST: !GetAtt rElasticSearchDomain.DomainEndpoint
+          ES_INDEX:
+            Ref: pIndex
+      Timeout: 30
+
+  rDeadLetterSqsQueue:
+    Type: AWS::SQS::Queue
+    Properties: 
+      MessageRetentionPeriod: 1209600   # set to max - 14 days
+      KmsMasterKeyId: !Ref rSQSCMK
+      KmsDataKeyReusePeriodSeconds: 600
+
+  rMainSqsQueue:
+    Type: AWS::SQS::Queue
+    Properties: 
+      VisibilityTimeout: 30
+      MessageRetentionPeriod: 1209600   # set to max - 14 days
+      KmsMasterKeyId: !Ref rSQSCMK
+      KmsDataKeyReusePeriodSeconds: 600
+      RedrivePolicy: 
+        deadLetterTargetArn: 
+          Fn::GetAtt: 
+            - "rDeadLetterSqsQueue"
+            - "Arn"
+        maxReceiveCount: 3
+        
+
+  # Lambda Trigger for Main SQS queue
+  rSqsLambdaTrigger:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 5
+      Enabled: true
+      EventSourceArn: !GetAtt rMainSqsQueue.Arn
+      FunctionName: !GetAtt rSyncFilesLambda.Arn
+
+  # Lambda Invoke for Main SQS queue
+  rSqsInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Fn::GetAtt: [ rSyncFilesLambda ,"Arn" ]
+      Action: lambda:InvokeFunction
+      Principal: sqs.amazonaws.com
+      SourceArn: !Ref rMainSqsQueue
+
+  # Lambda Invoke for  Dead Letter SQS queue
+  rSqsInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Fn::GetAtt: [ rSyncFilesLambda ,"Arn" ]
+      Action: lambda:InvokeFunction
+      Principal: sqs.amazonaws.com
+      SourceArn: !GetAtt rDeadLetterSqsQueue.Arn
+
+  rSetupBucketEventsLambdaExRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - !Ref rSetupBucketEventsLambdaExPolicy
+
+  rSetupBucketEventsLambdaExPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Action: [ 'logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents' ]
+          Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:*
+        -
+          Effect: Allow
+          Action:
+            - 's3:ListBucket'
+            - 's3:GetBucketLocation'
+            - 's3:PutBucketNotification'
+          Resource: !Ref pFileSyncSourceBuckets
+        -
+          Effect: Allow
+          Action:
+            - 'sqs:SetQueueAttributes'
+          Resource:
+            - !Sub '${rDeadLetterSqsQueue.Arn}'
+            - !Sub '${rMainSqsQueue.Arn}'
+
+  # Custom lambda that creates an event on the logging buckets
+  rSetupS3BucketEventsLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Adds event to Logging buckets that will trigger an SNS topic
+      Handler: setup_s3_events.handler
+      Code: './lambdas/setup_s3_events'
+      MemorySize: 128
+      Role: !GetAtt rSetupBucketEventsLambdaExRole.Arn
+      Runtime: python3.6
+      Timeout: 300
+
+  rSetupEventsLambdaInvoke:
+    Type: AWS::CloudFormation::CustomResource
+    Properties: 
+      ServiceToken: !GetAtt rSetupS3BucketEventsLambda.Arn
+      SourceS3BucketsArnList: !Join [",", !Ref pFileSyncSourceBuckets]
+      SqsQueueUrl: !Ref rMainSqsQueue
+      SqsQueueArn: !GetAtt rMainSqsQueue.Arn
+
+  rFileSyncSNS:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: EQ-Log Monitoring Solution
+
+  rFileSyncSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint: !Ref pAlertNotificationEmail
+      Protocol: email
+      TopicArn: !Ref rFileSyncSNS
+
+  rDeadletterAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties: 
+      AlarmActions:
+        - !Ref rFileSyncSNS
+      AlarmDescription: deadletter backlog alarm
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      DatapointsToAlarm: 1
+      TreatMissingData: ignore
+      Dimensions: 
+        - 
+          Name: QueueName
+          Value: !GetAtt rDeadLetterSqsQueue.QueueName
+      EvaluationPeriods: 1
+      MetricName: "ApproximateNumberOfMessagesVisible"
+      Namespace: "AWS/SQS"
+      Period: 60
+      Statistic: Sum
+      Threshold: 1.0
+
+  rDeadletterAlarmHigh:
+    Type: AWS::CloudWatch::Alarm
+    Properties: 
+      AlarmActions:
+        - !Ref rFileSyncSNS
+      AlarmDescription: High deadletter backlog alarm
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      DatapointsToAlarm: 1
+      TreatMissingData: ignore
+      Dimensions: 
+        - 
+          Name: QueueName
+          Value: !GetAtt rDeadLetterSqsQueue.QueueName
+      EvaluationPeriods: 1
+      MetricName: "ApproximateNumberOfMessagesVisible"
+      Namespace: "AWS/SQS"
+      Period: 60
+      Statistic: Sum
+      Threshold: 30.0
+
+  rQueueBacklogAlarm5:
+    Type: AWS::CloudWatch::Alarm
+    Properties: 
+      AlarmActions:
+        - !Ref rFileSyncSNS
+      AlarmDescription: High file sync queue backlog alarm
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      DatapointsToAlarm: 1
+      TreatMissingData: ignore
+      Dimensions: 
+        - 
+          Name: QueueName
+          Value: !GetAtt   rMainSqsQueue.QueueName
+      EvaluationPeriods: 1
+      MetricName: "ApproximateNumberOfMessagesVisible"
+      Namespace: "AWS/SQS"
+      Period: 60
+      Statistic: Sum
+      Threshold: 100
+
+  rSQSCMK:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: "CMK to be used for s3 sync main and deadletter queue"
+      KeyPolicy:
+        Version: "2012-10-17"
+        Id: "key-default-1"
+        Statement:
+        -
+            Sid: "Enable IAM User Permissions"
+            Effect: "Allow"
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: "kms:*"
+            Resource: "*"
+        - Sid: Allow s3 service to use the key
+          Effect: Allow
+          Principal:
+            Service: s3.amazonaws.com
+          Action:
+          - kms:GenerateDataKey
+          - kms:Decrypt
+          Resource: "*"
+        - Sid: Allow access through Simple Queue Service (SQS) for all principals in the account
+            that are authorized to use SQS
+          Effect: Allow
+          Principal:
+            AWS: "*"
+          Action:
+          - kms:Encrypt
+          - kms:Decrypt
+          - kms:ReEncrypt*
+          - kms:GenerateDataKey*
+          - kms:CreateGrant
+          - kms:DescribeKey
+          Resource: "*"
+          Condition:
+            StringEquals:
+              kms:CallerAccount: !Sub '${AWS::AccountId}'
+              kms:ViaService: !Sub 'sqs.${AWS::Region}.amazonaws.com'
+
+  rSQSCMKAlias:
+    Type: AWS::KMS::Alias
+    Properties: 
+      AliasName: !Sub 'alias/EQ_${AWS::StackName}_SQS'   
+      TargetKeyId: !Ref rSQSCMK
+
+
+  rRestartSyncLambdaExRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service: [lambda.amazonaws.com]
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Ref rRestartSyncLambdaExPolicy
+
+  rRestartSyncLambdaExPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        -
+          Effect: Allow
+          Action:
+            - 'kms:Decrypt'
+            - 'kms:GenerateDataKey'
+          Resource: !GetAtt rSQSCMK.Arn
+        -
+          Effect: Allow
+          Action:
+            - 'sqs:ReceiveMessage'
+            - 'sqs:DeleteMessage'
+            - 'sqs:GetQueueAttributes'
+            - 'sqs:ChangeMessageVisibility'
+            - 'sqs:GetQueueUrl'
+            - 'sqs:SendMessage'
+            - 'sqs:DeleteMessage'
+          Resource: 
+            - !GetAtt rMainSqsQueue.Arn
+            - !GetAtt rDeadLetterSqsQueue.Arn
+        -
+          Effect: Allow
+          Action:
+            - 'lambda:ListEventSourceMappings'
+            - 'lambda:UpdateEventSourceMapping'
+          Resource: "*"
+          Condition: 
+            StringLike: 
+              "lambda:FunctionArn": !GetAtt rSyncFilesLambda.Arn
+        -
+          Effect: Allow
+          Action:
+            - 'sns:Publish'
+          Resource: !Ref rFileSyncSNS   
+
+  # Lambda that will recover s3 sync from error state. Move messages fomr dlq back to main queue and unpause processing
+  rRestartSyncLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Will recover s3 sync from error state. Move messages fomr dlq back to main queue and unpause processing
+      Handler: restart_sync.handler
+      Code: './lambdas/restart_sync'
+      MemorySize: 128
+      Role: !GetAtt rRestartSyncLambdaExRole.Arn
+      Runtime: python3.6
+      Environment:
+        Variables:
+          MAIN_QUEUE_URL: !Ref rMainSqsQueue
+          DEAD_LETTER_QUEUE_URL: !Ref rDeadLetterSqsQueue
+          EVENTSOURCE_MAPPING_UUID: !Ref rSqsLambdaTrigger
+          NOTIFICATION_TOPIC_ARN: !Ref rFileSyncSNS
+      Timeout: 120
+
+Outputs:
+  DomainArn:
+    Value: !GetAtt rElasticSearchDomain.DomainArn
+  DomainEndpoint:
+    Value: !GetAtt rElasticSearchDomain.DomainEndpoint

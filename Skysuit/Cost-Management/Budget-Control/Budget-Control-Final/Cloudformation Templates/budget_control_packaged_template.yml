@@ -1,0 +1,156 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Cloudformation Template for the management account for the budget control
+  solution
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Cloudwatch eve Information
+      Parameters:
+      - pLambdaTiggerSchedular
+    - Label:
+        default: Organization Unit Information
+      Parameters:
+      - pQuarantineOU
+    ParameterLabels:
+      pLambdaTiggerSchedular:
+        default: Cron Job
+      pQuarantineOU:
+        default: Qarantine OU Id
+Parameters:
+  pQuarantineOU:
+    Type: String
+    Description: Organization ID of the Quarantine OU
+  pLambdaTiggerSchedular:
+    Type: String
+    Default: cron(0 6 1 * ? *)
+    Description: Enter Cron Job to schedule the lambda trigger time.
+Resources:
+  BudgetControlAWSOrganizationsPermissionPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - organizations:ListParents
+          - organizations:MoveAccount
+          - organizations:DescribeOrganizationalUnit
+          - organizations:ListAccountsForParent
+          - organizations:UntagResource
+          - organizations:TagResource
+          - organizations:ListTagsForResource
+          - ses:SendEmail
+          Resource:
+          - Fn::Join:
+            - ''
+            - - 'arn:'
+              - Ref: AWS::Partition
+              - ':organizations::'
+              - Ref: AWS::AccountId
+              - :account/o-*/*
+          - Fn::Join:
+            - ''
+            - - 'arn:'
+              - Ref: AWS::Partition
+              - ':organizations::'
+              - Ref: AWS::AccountId
+              - :ou/o-*/ou-*
+          - Fn::Join:
+            - ''
+            - - 'arn:'
+              - Ref: AWS::Partition
+              - ':organizations::'
+              - Ref: AWS::AccountId
+              - :identity/*
+  BudgetControlAWSBudgetsPermissionPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - budgets:ViewBudget
+          Resource:
+            Fn::Join:
+            - ''
+            - - 'arn:'
+              - Ref: AWS::Partition
+              - ':budgets::'
+              - Ref: AWS::AccountId
+              - :budget/*
+  BudgetControlEventBridgeRuleTarget:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: s3://nida-testing-2/ee09e1f9ab1f46b059d499a8765ade2a
+      Handler: budget_control_handler.lambda_handler
+      Runtime: python3.8
+      Description: Python function to handle eventbridge rule for budget control
+      MemorySize: 512
+      Timeout: 60
+      Environment:
+        Variables:
+          QUARANTINE_OU:
+            Ref: pQuarantineOU
+      Policies:
+      - AWSLambdaBasicExecutionRole
+      - AWSLambda_ReadOnlyAccess
+      - Ref: BudgetControlAWSOrganizationsPermissionPolicy
+  BudgetControlEventBridgeRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        Fn::Join:
+        - ''
+        - - '{"source":["budget-control-solution"],'
+          - '"detail-type":["Budget Threshold Breached"]'
+          - '}'
+      State: ENABLED
+      Targets:
+      - Arn:
+          Fn::GetAtt:
+          - BudgetControlEventBridgeRuleTarget
+          - Arn
+        Id: BudgetControlLambdaTarget
+  BudgetControlEventBridgeRuleTargetInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+        - BudgetControlEventBridgeRuleTarget
+        - Arn
+      Principal: events.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+        - BudgetControlEventBridgeRule
+        - Arn
+  rScheduledRuleForLambdaFunc:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Scheduled Rule for export cloudwatch logs to s3 Bucket
+      ScheduleExpression:
+        Ref: pLambdaTiggerSchedular
+      State: ENABLED
+      Targets:
+      - Arn:
+          Fn::GetAtt:
+          - BudgetControlEventBridgeRuleTarget
+          - Arn
+        Id: BudgetControlLambda
+  rPermissionForEventsToInvokeLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Fn::GetAtt:
+        - BudgetControlEventBridgeRuleTarget
+        - Arn
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+        - rScheduledRuleForLambdaFunc
+        - Arn

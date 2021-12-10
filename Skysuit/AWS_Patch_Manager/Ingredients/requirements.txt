@@ -1,0 +1,20 @@
+House No. 2 Street No.2 Ganda Nala, Gulistan town, Shad Bagh, Lahore. 
+
+Bucket name: eq-patch-managment-data
+Master account ID : 112520250899
+shared account ID : 522955560990
+
+
+=================================Cloud_Watch_Event_Cross_Account====================================================================
+
+Events sent from one account to another are charged to the sending account as custom events. 
+The receiving account is not charged. For more information, see Amazon CloudWatch Pricing.
+
+
+15 1 * * * ? *
+
+
+
+==========================
+
+eq-resourcedatasync-us-east-1-112520250899/shared-account-522955560990/

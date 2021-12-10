@@ -1,0 +1,77 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Attach IAM Instance Profile & Assign Tag as Patch Group for patching
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Intance profile information
+      Parameters:
+      - pIamInstanceProfileName
+      - pIntancesName
+    - Label:
+        default: Tag Value for Patch Group
+      Parameters:
+      - pTagValue
+    ParameterLabels:
+      pIamInstanceProfileName:
+        default: Iam Instance Profile Name
+      pTagValue:
+        default: Value for Patch Group
+      pIntancesName:
+        default: Intances Name
+Parameters:
+  pIamInstanceProfileName:
+    Type: String
+    Default: IAMrole-RootInstanceProfile-XDUJK3N21TC4
+    Description: Enter Iam Instance Profile Name
+  pTagValue:
+    Type: String
+    Default: Linux
+    Description: Enter Value of tag:Patch Group
+  pIntancesName:
+    Type: String
+    Default: ssm-instances
+    Description: Enter the name Intances
+Resources:
+  rIntanceProfileLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role:
+        Fn::GetAtt:
+        - rCURLambdaExRole
+        - Arn
+      Code:
+        S3Bucket: patch-lambda-code
+        S3Key: ee9354b2a90aaa33cbd41e98014e6824
+      Runtime: python3.7
+  rCURLambdaExRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      - arn:aws:iam::aws:policy/AmazonEC2FullAccess
+      - arn:aws:iam::aws:policy/IAMFullAccess
+  rCURReportResource:
+    Type: Custom::instanceprofile
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+        - rIntanceProfileLambda
+        - Arn
+      iaminstanceprofilename:
+        Ref: pIamInstanceProfileName
+      tagvalue:
+        Ref: pTagValue
+      instancesname:
+        Ref: pIntancesName

@@ -1,0 +1,114 @@
+#===============================================================================
+# Create Patch baseline report.
+# scenario, this template must be run in source bucket account.
+#
+# (c) Enquizit, Inc 2019
+# v1.0 2020-07-15
+#================================================================================
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Event Rule for patch baseline 
+###################################################
+#
+# CloudFormation Interface Metadata
+#
+###################################################
+Metadata:
+
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Event Rule Information
+      Parameters:
+      - pEventRuleName
+      - pSchedule_Expression
+      
+    ParameterLabels:
+      pEventRuleName:
+        default: Event Rule Name
+      pScheduleExpression:
+        default: Schedule 
+        
+        
+###################################################
+#
+# Template Parameter Definitions
+#
+###################################################
+Parameters: 
+    
+  pEventRuleName:
+    Type: String
+    Default: PatchBaselineRule
+    Description: Enter Name of Rule.
+  pScheduleExpression:
+    Type: String
+    Default: 'cron(47 12 ? * * *)'
+    Description: Enter Schedule Expression
+  pPatchGroupValues:
+    Type: String
+    Default: "Win, prod"
+    
+###################################################
+#
+# Resource definitions
+#
+###################################################
+
+Resources:
+
+  rEventRole: 
+    Type: "AWS::IAM::Role"
+    Properties: 
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - 
+            Effect: "Allow"
+            Principal: 
+              Service: 
+                - "events.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: "eventpolicyforRunCommand"
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement:
+             - Action: 
+                 - ssm:SendCommand
+               Effect: Allow
+               Resource:
+               # - arn:aws:ec2:us-east-1:522955560990:instance/*       
+                 - !Sub 'arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*'
+               Condition:
+                 StringEquals:
+                   ec2:ResourceTag/*:
+                     - !Ref pPatchGroupValues
+             - Action: 
+                 - ssm:SendCommand
+               Effect: Allow
+               Resource:
+               # - arn:aws:ssm:us-east-1:*:document/AWS-RunPatchBaseline
+                - !Sub 'arn:aws:ssm:${AWS::Region}:*:document/AWS-RunPatchBaseline'
+        
+
+  rPatchBaselineRule:
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: 'Rule for SSM Run Command'
+      EventBusName: 'default'
+      Name: !Ref pEventRuleName
+      RoleArn: !GetAtt rEventRole.Arn     #'arn:aws:iam::522955560990:role/service-role/AWS_Events_Invoke_Run_Command_1711827196'
+      ScheduleExpression: !Ref pScheduleExpression
+      State: 'ENABLED'
+      Targets: 
+        - Arn: !Sub 'arn:aws:ssm:${AWS::Region}::document/AWS-RunPatchBaseline'
+          RoleArn: !GetAtt rEventRole.Arn
+          Id: 'patching'
+          Input: '{"Operation":["Install"]}'
+          RunCommandParameters:
+            RunCommandTargets:
+              - Key: 'tag:Patch Group'
+                Values:
+                  - !Ref pPatchGroupValues

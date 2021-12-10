@@ -1,0 +1,107 @@
+#===============================================================================
+# Deploy child templates
+# (c) Enquizit, Inc 2019
+# v1.0 2020-02-11
+#================================================================================
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'This CloudFormation Template will create Windows Image Stack and Centos Image Stack'
+
+#================================================
+# Parameters
+#===================================================
+
+Parameters:             
+
+  pWindowSourceStackName:
+    Description: Source Stack Name for import export.
+    Type: String
+
+  pWindowParentImage:
+    Description: Parent Image for the Image recipe
+    Type: String
+  
+  pWindowStigComponents:
+    Description: Components of the Image recipe
+    Type: String
+
+  pWindowRebootComponents:
+    Description: Components of the Image recipe
+    Type: String
+
+  pWindowImageRecipeName:
+    Description: Window Recipe Name
+    Type: String
+
+  pWindowInfrastructureConfigurationName:
+    Description: Window Infrastructure Configuration Name
+    Type: String
+
+  pWindowImagePipelineName:
+    Description: Window IMage Builder Pipeline Name
+    Type: String
+    
+  pWindowDistributionConfigurationName:
+    Description: Window Distribution Configuration Name
+    Type: String
+
+  pCentosSourceStackName:
+    Description: "Source stack name"
+    Type: String
+
+  pCentosParentImage:
+    Description: Parent Image for the Image recipe
+    Type: String
+
+  pCentosComponents:
+    Description: Components of the Image recipe
+    Type: String
+
+  pCentosImageRecipe:
+    Description: Centos Image Recipe Name
+    Type: String
+  
+  pCentosInfrastructureConfiguration:
+    Description: Centos Infrastructure Configuration Name
+    Type: String
+
+  pCentosImagePipeline:
+    Description: Centos Image Pipeline Name
+    Type: String
+
+  pCentosDistributionConfiguration:
+    Description: Centos Distribution Configuration Name
+    Type: String
+  
+  
+
+#==================================================
+# Resources
+#==================================================
+Resources:
+  nestedWindowsImageBuilder:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: <Copy the URL of windows_image_builder.yaml from s3 and paster here>
+      Parameters:
+        pWindowStigComponents: !Ref pWindowStigComponents
+        pWindowParentImage: !Ref pWindowParentImage
+        pWindowSourceStackName: !Ref pWindowSourceStackName
+        pWindowRebootComponents: !Ref pWindowRebootComponents
+        pWindowImageRecipeName: !Ref pWindowImageRecipeName
+        pWindowInfrastructureConfigurationName: !Ref pWindowInfrastructureConfigurationName
+        pWindowImagePipelineName: !Ref pWindowImagePipelineName
+        pWindowDistributionConfigurationName: !Ref pWindowDistributionConfigurationName
+
+
+  nestedLinuxImageBuilder:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: <Copy the URL of linux_image_builder.yaml from s3 and paster here>
+      Parameters:
+        pCentosParentImage: !Ref pCentosParentImage
+        pCentosComponents: !Ref pCentosComponents  
+        pCentosSourceStackName: !Ref pCentosSourceStackName
+        pCentosImageRecipe: !Ref pCentosImageRecipe
+        pCentosInfrastructureConfiguration: !Ref pCentosInfrastructureConfiguration
+        pCentosImagePipeline: !Ref pCentosImagePipeline
+        pCentosDistributionConfiguration: !Ref pCentosDistributionConfiguration

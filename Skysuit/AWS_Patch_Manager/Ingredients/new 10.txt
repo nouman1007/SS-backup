@@ -1,0 +1,48 @@
+i-0c94f9c7318424801
+associated
+yes Yes
+i-0c94f9c7318424801
+i-0c94f9c7318424801
+true
+i-0eae5427636cf5a10
+i-0c94f9c7318424801
+false
+i-0c94f9c7318424801
+i-0eae5427636cf5a10
+false
+i-0eae5427636cf5a10
+i-0eae5427636cf5a10
+true
+['iip-assoc-0a269d6e8c408cb9c', 'iip-assoc-02fbd1041a29dc96e']
+{'IamInstanceProfileAssociation': {'AssociationId': 'iip-assoc-02fbd1041a29dc96e', 'InstanceId': 'i-0eae5427636cf5a10', 'IamInstanceProfile': {'Arn': 'arn:aws:iam::522955560990:instance-profile/IAMrole-RootInstanceProfile-XDUJK3N21TC4', 'Id': 'AIPAXTQUUTAPJLAPRILSE'}, 'State': 'disassociating'}, 'ResponseMetadata': {'RequestId': '3f496e1c-9a49-4447-827c-2e4ab5744412', 'HTTPStatusCode': 200, 'HTTPHeaders': {'x-amzn-requestid': '3f496e1c-9a49-4447-827c-2e4ab5744412', 'content-type': 'text/xml;charset=UTF-8', 'transfer-encoding': 'chunked', 'vary': 'accept-encoding', 'date': 'Sun, 04 Oct 2020 16:21:29 GMT', 'server': 'AmazonEC2'}, 'RetryAttempts': 0}}
+{'IamInstanceProfileAssociation': {'AssociationId': 'iip-assoc-0b7471d040bf2607e', 'InstanceId': 'i-0eae5427636cf5a10', 'IamInstanceProfile': {'Arn': 'arn:aws:iam::522955560990:instance-profile/IAMrole-RootInstanceProfile-XDUJK3N21TC4', 'Id': 'AIPAXTQUUTAPJLAPRILSE'}, 'State': 'associating'}, 'ResponseMetadata': {'RequestId': 'be104509-8950-407f-bd74-654b8e7bfa78', 'HTTPStatusCode': 200, 'HTTPHeaders': {'x-amzn-requestid': 'be104509-8950-407f-bd74-654b8e7bfa78', 'content-type': 'text/xml;charset=UTF-8', 'transfer-encoding': 'chunked', 'vary': 'accept-encoding', 'date': 'Sun, 04 Oct 2020 16:21:30 GMT', 'server': 'AmazonEC2'}, 'RetryAttempts': 0}}
+i-0eae5427636cf5a10
+associated
+yes Yes
+i-0c94f9c7318424801
+i-0c94f9c7318424801
+true
+i-0eae5427636cf5a10
+i-0c94f9c7318424801
+false
+i-0c94f9c7318424801
+i-0eae5427636cf5a10
+false
+i-0eae5427636cf5a10
+i-0eae5427636cf5a10
+true
+['iip-assoc-0a269d6e8c408cb9c', 'iip-assoc-02fbd1041a29dc96e']
+Traceback (most recent call last):
+  File "InstanceID.py", line 77, in <module>
+    dis_associate_profile(PROFILE)
+  File "InstanceID.py", line 53, in dis_associate_profile
+    dis_associate = ec2.disassociate_iam_instance_profile(
+  File "/home/nouman/.local/lib/python3.8/site-packages/botocore/client.py", line 316, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+  File "/home/nouman/.local/lib/python3.8/site-packages/botocore/client.py", line 635, in _make_api_call
+    raise error_class(parsed_response, operation_name)
+botocore.exceptions.ClientError: An error occurred (InvalidAssociationID.NotFound) when calling the DisassociateIamInstanceProfile operation: An invalid association-id of 'iip-assoc-0a269d6e8c408cb9c' was given
+
+==============================================================================================================================================================================================================================
+
+[ERROR]	2020-10-06T14:06:09.763Z	e49187fd-8785-4ade-8f9a-c80a57f28cfb	An error occurred (UnauthorizedOperation) when calling the AssociateIamInstanceProfile operation: You are not authorized to perform this operation. Encoded authorization failure message: NSwZ7XlkNPK2AtGf3PCYzxLA7BCgeIe4drFZsacJYwQ-dpQXaQo_b7mj27-k6LWJdycpiynNNozv9OpRdflUwIAntcyLOm7ZzkhBOA3wcOnxRvULQAsY_q7ilfFWARnnVEGeyzRU75KAJhZ7xjCbe8ztTrQMoCeJpPdgixoFDfkAj4XS_P3GEXx4PHecpn8uk23lG5jxamw71FbGakRqvhIVpTxMvnW5I-fPbBrmZ8CzDUWorQFTJaBwxMgqGX9aIL96nLv7E6kc8UCsyTbzTWVvCiV6Rfm4yuyn1kW36yMD5n1XEYt7N-B4VHzsuPZ5Erspl2RRFWNDc9SIt8XIZYAFbkFOSIw1My_UbZLB_SGsvtAnNneOx8k9dcRk1NRn4_d6gaCwSiZTZEhkrYKMwn7GbgFx22ZuRP0UDTolY8AraHvqPPx6sf6CtBDGP14iELC-N2lBqdgM0YzsPfMV_dYB6Nsl-WubyAMwWYI7QUIyXUknHnjdxFgCAJZkORWppaUrQK8zCRiI2qSDVZ5NSp6iak90za_qC59sEJerxgwmGhOwiMlT8e5tjT87tY91x8o-gRjg46x_QM2kIR6EFOxb70TaF7OxRw

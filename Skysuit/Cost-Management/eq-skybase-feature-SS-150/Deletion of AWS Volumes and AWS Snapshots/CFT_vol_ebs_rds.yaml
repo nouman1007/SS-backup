@@ -1,0 +1,85 @@
+#===============================================================================
+# Picks up the available volumes, Old EBS Snapshots and OLD RDS Snapshots
+# and deletes it.
+
+# (c) Enquizit, Inc 2021
+# v1.0 2021-06-25
+#================================================================================
+AWSTemplateFormatVersion: '2010-09-09'
+Description: The cloudformation template is able to deploy the lambda function and cloudwatch scheduheled event.
+
+Parameters:
+
+  NumberOfDays:
+    Type: Number
+    Description: Give number of days for filtering out the old EBS snapshots or RDS snapshots.
+  S3BucketName:
+    Type: String
+    Description: Name of bucket where deletes_vol_ebs_rds.zip file is uploaded. 
+  
+Resources:
+
+  # lambda that Picks up the available volumes, ebs snapshots and rds snapshots and deletes it.
+  rDeleteResourcesFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: deletes_vol_ebs_rds.handler
+      Role: !GetAtt rDeleteResourceRole.Arn
+      Runtime: python3.7
+      Timeout: 480
+      Environment:
+        Variables:
+          NumberOfDays: !Ref NumberOfDays
+      Code:
+        S3Bucket: !Ref S3BucketName
+        S3Key: deletes_vol_ebs_rds.zip
+
+  rDeleteResourceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: sts-assume-role-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: 'sts:AssumeRole'
+                Resource: '*'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSOrganizationsReadOnlyAccess
+
+  rDeleteResourcesRule: 
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: "Scheduled Rule tol trigger the lambda function for deletion of unattached volumes , Old EBS snapshots and Old RDS snapshots."
+      ScheduleExpression: "cron(0 6 * * ? *)"
+      State: "ENABLED"
+      Targets: 
+        - 
+          Arn: 
+            Fn::GetAtt: 
+              - "rDeleteResourcesFunction"
+              - "Arn"
+          Id: "TargetFunctionV1"
+
+  rPermissionForEventsToInvokeLambda: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: !Ref "rDeleteResourcesFunction"
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: 
+        Fn::GetAtt: 
+          - "rDeleteResourcesRule"
+          - "Arn"           

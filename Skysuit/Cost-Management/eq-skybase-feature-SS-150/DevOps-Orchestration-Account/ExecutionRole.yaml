@@ -1,0 +1,45 @@
+# Create AWSCloudFormationStackSetExecutionRole to support AWS CloudFormation StackSets in a managed account
+# (c) Enquizit, Inc 2020
+# v1.0 2021-03-16
+
+AWSTemplateFormatVersion: 2010-09-09
+Description: Configure the AWSCloudFormationStackSetExecutionRole to support AWS CloudFormation StackSets in a managed account.
+
+###################################################
+#
+# Template Parameter Definitions
+#
+###################################################
+
+Parameters:
+  pMasterAccountId:
+    Type: String
+    Description: AWS Account Id of the master account (the account in which StackSets will be created).
+    MaxLength: 12
+    MinLength: 12
+
+###################################################
+#
+# Template Resource Definitions
+#
+###################################################
+
+Resources:
+
+  # craete AWSCloudFormationStackSetExecutionRole Role
+  rExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: AWSCloudFormationStackSetExecutionRole
+      AssumeRolePolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          - Effect: Allow
+            Principal: 
+              AWS:
+                - !Ref pMasterAccountId
+            Action: 
+              - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess

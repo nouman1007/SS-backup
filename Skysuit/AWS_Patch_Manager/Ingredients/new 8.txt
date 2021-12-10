@@ -1,0 +1,52 @@
+ConstraintDescription
+A string that explains a constraint when the constraint is violated. For example, without a constraint description, a parameter that has an allowed pattern of [A-Za-z0-9]+ displays the following error message when the user specifies an invalid value:
+
+Malformed input-Parameter MyParameter must match pattern [A-Za-z0-9]+
+
+By adding a constraint description, such as must only contain letters (uppercase and lowercase) and numbers, you can display the following customized error message:
+
+Malformed input-Parameter MyParameter must only contain uppercase and lowercase letters and numbers
+
+Required: No
+
+https://stackoverflow.com/questions/40184169/aws-cloudformation-parameter-dependency
+
+  # pPRODUCT_FAMILY:
+    # Type: String
+    # Default: WINDOWS
+    # AllowedValues: 
+      # - AMAZON_LINUX
+      # - AMAZON_LINUX_2
+      # - CENTOS
+      # - DEBIAN
+      # - ORACLE_LINUX
+      # - REDHAT_ENTERPRISE_LINUX
+      # - SUSE
+      # - UBUNTU
+    # Description: Enter AMAZON_LINUX, AMAZON_LINUX_2, CENTOS, DEBIAN, ORACLE_LINUX, REDHAT_ENTERPRISE_LINUX, SUSE or UBUNTU. Default is WINDOWS.
+
+  # pPATCH_SET:
+    # Type: String
+    # Default: OS
+    # AllowedValues: 
+      # - OS
+      # - APPLICATION
+    # Description: Enter OS, APPLICATION. Default is OS.
+===============================================================================================================
+
+4validation errors detected: Value 'Critical' at 'approvalRules.patchRules.1.member.complianceLevel' failed to satisfy constraint: Member must satisfy enum value set: [HIGH, LOW, MEDIUM, UNSPECIFIED, INFORMATIONAL, CRITICAL].;
+ Value 'Severity' at 'approvalRules.patchRules.1.member.patchFilterGroup.patchFilters.1.member.key' failed to satisfy constraint: Member must satisfy enum value set: [SECURITY, ADVISORY_ID, PRIORITY, SECTION, MSRC_SEVERITY, CLASSIFICATION, RELEASE, CVE_ID, EPOCH, REPOSITORY, NAME, PATCH_SET, PRODUCT, PATCH_ID, PRODUCT_FAMILY, ARCH, VERSION, BUGZILLA_ID, SEVERITY].; 
+ Value 'Product' at 'approvalRules.patchRules.1.member.patchFilterGroup.patchFilters.2.member.key' failed to satisfy constraint: Member must satisfy enum value set: [SECURITY, ADVISORY_ID, PRIORITY, SECTION, MSRC_SEVERITY, CLASSIFICATION, RELEASE, CVE_ID, EPOCH, REPOSITORY, NAME, PATCH_SET, PRODUCT, PATCH_ID, PRODUCT_FAMILY, ARCH, VERSION, BUGZILLA_ID, SEVERITY].;
+ Value 'Classification' at 'approvalRules.patchRules.1.member.pa
+ 
+ ================================================================================================================
+ 
+ Invalid Filter Value: All for Key: CLASSIFICATION, valid values are: CriticalUpdates, DefinitionUpdates, Drivers, FeaturePacks, SecurityUpdates, ServicePacks, Tools, UpdateRollups, Updates, Upgrades, 
+ Invalid Filter Value: All for Key: MSRC_SEVERITY, valid values are: Critical, Important, Moderate, Low, Unspecified (Service: AmazonSSM; Status Code: 400; Error Code: ValidationException; Request ID: f00bf5c8-964f-4a23-83bd-fa68597748a3)
+ =================================================================================================================
+AmazonEC2RoleforSSM 
+IAMrole-RootInstanceProfile-XDUJK3N21TC4
+
+ 
+ 
+ 

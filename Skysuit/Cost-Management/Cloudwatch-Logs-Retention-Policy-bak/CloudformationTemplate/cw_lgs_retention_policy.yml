@@ -1,0 +1,91 @@
+#===============================================================================
+# Create S3 Bucket, Put bucket policy, Export CloudWatch Logs in this Bucket
+# through lambda function and CloudWatch rule to trigger lambda everyday.
+#
+# (c) Enquizit, Inc 2019
+# v1.0 2020-07-15
+#================================================================================
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Set retention retention period. 
+###################################################
+#
+# CloudFormation Interface Metadata
+#
+###################################################
+Metadata:
+
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Cloudwatch Logs Information
+      Parameters:
+      - pCloudwatchLogsRetentionPeriod
+    ParameterLabels:
+      pCloudwatchLogsRetentionPeriod:
+        default: Retention Period in Days
+      
+###################################################
+#
+# Template Parameter Definitions
+#
+###################################################
+Parameters: 
+    
+  pCloudwatchLogsRetentionPeriod:
+    Type: Number
+    Default: 30
+    Description: Enter retention period (in days) of Cloudwatch Logs.
+
+###################################################
+#
+# Template Resource Definitions
+#
+###################################################
+  
+Resources:
+
+  # Custom lambda that Sets the cloudwatch Logs retention period
+  rCWLogSetRetentionFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt rLambdaExRole.Arn
+      Code: '../Lambda/cloudwatch_logs_setting_rentention_policy'
+      Runtime: python3.7
+      Timeout: 240
+      
+ # Lambda execution Role
+  rLambdaExRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: AWSCloudwatchLogsExporterPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:  
+              - Effect: Allow
+                Action:
+                  # - 'logs:*'
+                  - 'logs:DescribeLogGroups'
+                  - 'logs:PutRetentionPolicy'
+                Resource: '*'
+ 
+ # Custom Resource to set retention period
+  rSettingRetentionPolicy:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt rCWLogSetRetentionFunction.Arn
+      cw_logs_retention: !Ref pCloudwatchLogsRetentionPeriod
+

@@ -1,0 +1,87 @@
+# AWSTemplateFormatVersion: '2010-09-09'
+# Transform: AWS::Serverless-2016-10-31
+
+# Description: Cloudformation Template for the management account for the budget control
+  # solution
+
+# ---
+Description: "Basic Budget test"
+Resources:
+  BudgetProject:
+    Type: "AWS::Budgets::Budget"
+    Properties:
+      Budget:
+        BudgetName: "Project"
+        BudgetLimit:
+          Amount: 500
+          Unit: USD
+        TimeUnit: MONTHLY
+        TimePeriod:
+          Start: 1225864800
+          End: 1926864800
+        BudgetType: COST
+        CostFilters:
+          LinkedAccount:
+            - 522955560990
+            # - us-west-1
+            # - us-east-2
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 99
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: email@example.com
+            - SubscriptionType: EMAIL
+              Address: nshafiq@enquizit.com
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+          Subscribers:
+          - SubscriptionType: EMAIL
+            Address: nshafiq@enquizit.com
+            
+            
+  # BudgetIndividual:
+  #   Type: "AWS::Budgets::Budget"
+  #   Properties:
+  #     Budget:
+  #       BudgetName: "Individual"
+  #       BudgetLimit:
+  #         Amount: 100
+  #         Unit: USD
+  #       TimeUnit: MONTHLY
+  #       TimePeriod:
+  #         Start: 1225864800
+  #         End: 1926864800
+  #       BudgetType: COST
+  #       CostFilters:
+  #         LinkedAccount:
+  #           - 522955560990
+  #           # - us-west-1
+  #           # - us-east-2
+  #     NotificationsWithSubscribers:
+  #       - Notification:
+  #           NotificationType: ACTUAL
+  #           ComparisonOperator: GREATER_THAN
+  #           Threshold: 99
+  #         Subscribers:
+  #           - SubscriptionType: EMAIL
+  #             Address: email@example.com
+  #           - SubscriptionType: EMAIL
+  #             Address: nshafiq@enquizit.com
+  #       - Notification:
+  #           NotificationType: ACTUAL
+  #           ComparisonOperator: GREATER_THAN
+  #           Threshold: 80
+  #         Subscribers:
+  #         - SubscriptionType: EMAIL
+  #           Address: nshafiq@enquizit.com
+
+Outputs:
+  # BudgetId:
+  #   Value: !Ref BudgetIndividual              
+  Budget:
+    Value: !Ref BudgetProject              

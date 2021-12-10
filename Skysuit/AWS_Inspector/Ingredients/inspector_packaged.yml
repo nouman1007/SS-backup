@@ -1,0 +1,130 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CFN YAML to create Assessment target, template, resource group and run
+  the assessment template.
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Assessment Information
+      Parameters:
+      - pAssessmentTemplateName
+      - pAssessmentTargetName
+      - pResourceGroupTagsKey
+      - pResourceGroupTagsValue
+      - pDurationInSeconds
+    ParameterLabels:
+      pAssessmentTemplateName:
+        default: Assessment Template Name
+      pAssessmentTargetName:
+        default: Assessment Target Name
+      pResourceGroupTagsKey:
+        default: Resource Group Tags Key
+      pResourceGroupTagsValue:
+        default: Resource Group Tags Value
+      pDurationInSeconds:
+        default: Duration of assessment In Seconds
+Parameters:
+  pAssessmentTemplateName:
+    Type: String
+    Default: Eq-AssessmentTemplate
+    Description: The name of the Assessment Template.
+  pAssessmentTargetName:
+    Type: String
+    Default: Eq-AssessmentTarget
+    Description: The name of the Assessment Target.
+  pResourceGroupTagsKey:
+    Type: String
+    Default: Patch Group
+    Description: The Value name of the tag of the resource.
+  pResourceGroupTagsValue:
+    Type: String
+    Default: Dev
+    Description: The key name of the tag of the resource.
+  pDurationInSeconds:
+    Type: Number
+    Default: 180
+    Description: The duration of the assessment run in seconds.
+Resources:
+  rmyassessmenttarget:
+    Type: AWS::Inspector::AssessmentTarget
+    Properties:
+      AssessmentTargetName:
+        Ref: pAssessmentTargetName
+      ResourceGroupArn:
+        Fn::GetAtt:
+        - rresourcegroup
+        - Arn
+  rAssessmentTemplate:
+    Type: AWS::Inspector::AssessmentTemplate
+    Properties:
+      AssessmentTargetArn:
+        Fn::GetAtt:
+        - rmyassessmenttarget
+        - Arn
+      AssessmentTemplateName:
+        Ref: pAssessmentTemplateName
+      DurationInSeconds:
+        Ref: pDurationInSeconds
+      RulesPackageArns:
+      - arn:aws:inspector:us-east-1:316112463485:rulespackage/0-gEjTy7T7
+      - arn:aws:inspector:us-east-1:316112463485:rulespackage/0-rExsr2X8
+      - arn:aws:inspector:us-east-1:316112463485:rulespackage/0-PmNV0Tcd
+      - arn:aws:inspector:us-east-1:316112463485:rulespackage/0-R01qwB5Q
+  rresourcegroup:
+    Type: AWS::Inspector::ResourceGroup
+    Properties:
+      ResourceGroupTags:
+      - Key:
+          Ref: pResourceGroupTagsKey
+        Value:
+          Ref: pResourceGroupTagsValue
+  rAssessmentTemplateRunFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: rAssessmentTemplate
+    Properties:
+      Handler: index.handler
+      Role:
+        Fn::GetAtt:
+        - rLambdaExRole
+        - Arn
+      Code:
+        S3Bucket: patch-lambda-code
+        S3Key: 393163e519463f06337ce09cf95c6b15
+      Runtime: python3.7
+      Timeout: 240
+  rLambdaExRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+      - PolicyName: AWSInspectorLambdaPolicy
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action:
+            - inspector:StartAssessmentRun
+            Resource: '*'
+  rAssessmentTemplateRun:
+    Type: Custom::AWSRunAssessment
+    DependsOn: rAssessmentTemplate
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+        - rAssessmentTemplateRunFunction
+        - Arn
+      assessment_template_arn:
+        Fn::GetAtt:
+        - rAssessmentTemplate
+        - Arn

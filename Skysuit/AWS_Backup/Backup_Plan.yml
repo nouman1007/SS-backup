@@ -1,0 +1,25 @@
+
+
+
+Type: AWS::Backup::BackupPlan
+Properties: 
+  BackupPlan: 
+    BackupPlanResourceType
+      BackupPlanName: String
+      BackupPlanRule: 
+       - BackupRuleResourceType
+          CompletionWindowMinutes: Double
+          CopyActions: 
+            - CopyActionResourceType
+              DestinationBackupVaultArn: String
+          Lifecycle: 
+            LifecycleResourceType
+              DeleteAfterDays: Double
+              MoveToColdStorageAfterDays: Double
+
+          RecoveryPointTags: Json
+          RuleName: String
+          ScheduleExpression: String
+          StartWindowMinutes: Double
+          TargetBackupVault: String
+  BackupPlanTags: Json

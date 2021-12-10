@@ -1,0 +1,16 @@
+#============================================Security HUB=================================================================#
+
+Description: Example Hub with Tags
+Resources:
+  ExampleHubWithTags:
+    Type: 'AWS::SecurityHub::Hub'
+    Properties:
+      Tags:
+        key1: value1
+        key2: value2
+Outputs:
+  HubArn:
+    Value: !Ref ExampleHubWithTags
+	
+	
+==============================================================================

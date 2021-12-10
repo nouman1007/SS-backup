@@ -1,0 +1,182 @@
+#===============================================================================
+# Nested Template.
+# 1- Create custom Lambda to create SSM Parameters.
+# 2- Bill Summary Report Configuration.
+#
+# (c) Enquizit, Inc 2019
+# v1.1 2021-02-03
+#================================================================================
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Nested template to Createte SSM Parameters, Create & configure Bill summary report for each organization account.
+
+###################################################
+#
+# CloudFormation Interface Metadata
+#
+###################################################
+
+Metadata:
+
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Lambda Code
+        Parameters:
+          - pBucketName
+          - pLamdaSourceFileSSMParameter
+          - pLamdaSourceFileBillReport
+          - pSSMParamPrefix
+          - pOrgAccountIds
+          - pSESEmailAddresses
+          - pNotificationEmailAddress
+          - pReportSchedule        
+
+    ParameterLabels:
+      pBucketName:
+        default: Lambda Source Bucket
+      pLamdaSourceFileSSMParameter:
+        default: Lambda Source File to create, updatr eand delete parameters in parametere Store
+      pLamdaSourceFileBillReport:
+        default: Lambda Source File to send email through SES
+      pSSMParamPrefix:
+        default: Parameter Store Prefix
+      pOrgAccountIds:
+        default: Account Ids for the Organization         
+      pSESEmailAddresses:
+        default: Recipients email addresses
+      pNotificationEmailAddress:
+        default: Notification Email Address
+      pReportSchedule:
+        default: Report Schedule
+        
+###################################################
+#
+# Template Parameter Definitions
+#
+###################################################
+
+Parameters:
+
+  pBucketName:
+    Description: Name of the s3 bucket where the lambda functions are stored.
+    Type: String
+    Default: bill-summary-bucket
+
+  pLamdaSourceFileSSMParameter:
+    Description: Name of zip file containing lambda code. Note that this bucket must be in the same region where the stack is created.
+    Type: String
+    Default: Lambdas/bill-contact-parameters.zip
+    
+  pLamdaSourceFileBillReport:
+    Description: Name of zip file containing lambda code. Note that this bucket must be in the same region where the stack is created.
+    Type: String
+    Default: Lambdas/bill-summary-report.zip
+    
+  pSSMParamPrefix:
+    Description: SSM Parameter prefix to define Parameters Systems Manager -> Paramater Store. A parameter will be created in this format - /acme/billing/contact/{account number}.
+    Type: String
+    Default: /acme/billing/contact/
+
+  pOrgAccountIds:
+    Description: Account Ids you want the bill report for the Organization. Enter multiple account ids separated by comma without spaces. Each account Id will be the suffix for the parameter that is entered for pSSMParamPrefix. A parameter will be created in this format - /acme/billing/contact/123456789012.
+    Type: String
+    Default: '123456789012,123456789014,123456789013'
+
+  pSESEmailAddresses:
+    Description: Recipients email addresses separated by comma, make sure that are verified in SES
+    Type: String
+
+  pNotificationEmailAddress:
+    Description: Notification email address for SNS Topic. If there is an error in the lambda function, a CloudWatch Alarm is created and sends it to SNS.
+    Type: String    
+
+  pReportSchedule:
+    Description:  Cron schedule defining when bill summary will generate report. Runs every 3rd day of the month. Format is cron(min hr month * ? *).  Time is UTC.
+    Type: String
+    Default: cron(0 9 3 * ? *)
+    
+###################################################
+#
+# Template Resource Definitions
+#
+###################################################
+
+Resources:
+  
+  # Create billing contacts SSM parameters
+  rBillContactParametersStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://${pBucketName}.s3.amazonaws.com/CloudFormationTemplates/bill-contact-parameters.yml
+    
+      TimeoutInMinutes: '60'
+      
+      Parameters:
+        pBucketName: !Ref pBucketName
+        pLamdaSourceFileSSMParameter: !Ref pLamdaSourceFileSSMParameter
+        pOrgAccountIds: !Ref pOrgAccountIds
+        pSESEmailAddresses: !Ref pSESEmailAddresses
+        pSSMParamPrefix: !Ref pSSMParamPrefix
+        
+  # create a Bill Summary Report for each account in an organization
+  rBillSummaryReportStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://${pBucketName}.s3.amazonaws.com/CloudFormationTemplates/bill-summary-report.yml
+      TimeoutInMinutes: '60'
+      
+      Parameters:
+        pBucketName: !Ref pBucketName
+        pLamdaSourceFileBillReport: !Ref pLamdaSourceFileBillReport
+        pNotificationEmailAddress: !Ref pNotificationEmailAddress
+        pReportSchedule: !Ref pReportSchedule
+        pSSMParamPrefix: !Ref pSSMParamPrefix
+
+###################################################
+#
+# Outputs
+#
+###################################################
+
+Outputs:
+
+  oBillContactParametersStack:
+    Description: Stack ID of the stack that creates SSM parameters.
+    Value: !Ref rBillContactParametersStack
+  
+  oBillSummaryReportStack:
+    Description: Stack ID of the stack that creates Summary report resources.
+    Value: !Ref rBillSummaryReportStack   
+    
+  oOrgAccountIds:
+    Description: Account Ids you want the bill report for the Organization.
+    Value: !Ref pOrgAccountIds
+  
+  oSSMParameter:
+    Description: SSM Parameter prefix for each account 
+    Value: !Ref pSSMParamPrefix
+    
+  oSESEmails:
+    Description: Verified email addresses in SES. 
+    Value: !Ref pSESEmailAddresses
+    
+  oS3Bucket:
+    Description: Name of the s3 bucket where the lambda functions are stored.
+    Value: !Ref pBucketName
+
+  oSSMParametersLambdaArn:
+    Description: Lambda ARN - SSM parameter store.
+    Value: !GetAtt rBillContactParametersStack.Outputs.oSSMParametersLambdaArn
+
+  oBillReportLambdaArn:
+    Description: Lambda ARN - Bill Summary Report.
+    Value: !GetAtt rBillSummaryReportStack.Outputs.oLambdaArn
+    
+  oCloudWatchEventRule:
+    Description: Cloud Watch event rule name.
+    Value: !GetAtt rBillSummaryReportStack.Outputs.oCloudWatchEventRule
+    
+  oCloudWatchEventRule:
+    Description: SNS Topic Arn.
+    Value: !GetAtt rBillSummaryReportStack.Outputs.oCloudWatchEventRule

@@ -1,0 +1,98 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Move Users or accounts from One OU to another on basis of tags.
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Cloudwatch Logs Information
+      Parameters:
+      - pLambdaTiggerSchedular
+    - Label:
+        default: Organization Information
+      Parameters:
+      - pOrganizationUnitId
+    ParameterLabels:
+      pLambdaTiggerSchedular:
+        default: Cron Job
+      pOrganizationUnitId:
+        default: Qarantine OU Id
+Parameters:
+  pLambdaTiggerSchedular:
+    Type: String
+    Default: cron(0 6 1 * ? *)
+    Description: Enter Cron Job to schedule the lambda trigger time.
+  pOrganizationUnitId:
+    Type: String
+    Default: ou-hlvo-7vgmf82j
+    Description: Put Qarantine OU ID.
+Resources:
+  rMoveUsers:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role:
+        Fn::GetAtt:
+        - rLambdaExRole
+        - Arn
+      Code:
+        S3Bucket: nida-testing-2
+        S3Key: d03b9ba785a7dd53c0a518069250a454
+      Runtime: python3.7
+      Timeout: 240
+      Environment:
+        Variables:
+          OU_ID:
+            Ref: pOrganizationUnitId
+  rLambdaExRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+      - PolicyName: AWSAccountMovementPolicy
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action:
+            - organizations:ListAccountsForParent
+            - organizations:ListTagsForResource
+            - organizations:UntagResource
+            - organizations:MoveAccount
+            Resource: '*'
+  rScheduledRuleForLambdaFunc:
+    Type: AWS::Events::Rule
+    DependsOn: rMoveUsers
+    Properties:
+      Description: Scheduled Rule for export cloudwatch logs to s3 Bucket
+      ScheduleExpression:
+        Ref: pLambdaTiggerSchedular
+      State: ENABLED
+      Targets:
+      - Arn:
+          Fn::GetAtt:
+          - rMoveUsers
+          - Arn
+        Id: Move-User
+  rPermissionForEventsToInvokeLambda:
+    Type: AWS::Lambda::Permission
+    DependsOn: rMoveUsers
+    Properties:
+      FunctionName:
+        Ref: rMoveUsers
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+        - rScheduledRuleForLambdaFunc
+        - Arn

@@ -1,0 +1,125 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Set retention retention period.
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Cloudwatch Logs Information
+      Parameters:
+      - pCloudwatchLogsRetentionPeriod
+      - pLambdaTiggerSchedular
+      - pTargetId
+    - Label:
+        default: Organization Information
+      Parameters:
+      - pOrganizationUnitId
+      - pAssumeRoleName
+    ParameterLabels:
+      pCloudwatchLogsRetentionPeriod:
+        default: Retention Period in Days
+      pLambdaTiggerSchedular:
+        default: Cron Job
+      pTargetId:
+        default: Targets Id for CloudWatch Rule
+      pOrganizationUnitId:
+        default: Organizational Unit Id
+      pAssumeRoleName:
+        default: Assume Role name
+Parameters:
+  pCloudwatchLogsRetentionPeriod:
+    Type: Number
+    Default: 30
+    Description: Enter retention period (in days) of Cloudwatch Logs.
+  pLambdaTiggerSchedular:
+    Type: String
+    Default: cron(0 6 * * ? *)
+    Description: Enter Cron Job to schedule the lambda trigger time.
+  pTargetId:
+    Type: String
+    Default: cw-lg-expt-Func
+    Description: A name for the target. Use a string that will help you identify the
+      target. Each target associated with a rule must have an Id unique for that rule.
+  pOrganizationUnitId:
+    Type: String
+    Default: ou-hlvo-7vgmf82j
+    Description: A Organization Unit ID Inwhich Member accounts are associated with.
+  pAssumeRoleName:
+    Type: String
+    Default: CrossAccountRole
+    Description: Assume Role name which is deployed in Member accounts.
+Resources:
+  rCWLogSetRetentionFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role:
+        Fn::GetAtt:
+        - rLambdaExRole
+        - Arn
+      Code:
+        S3Bucket: rentention-bxkt-test-bkt
+        S3Key: 6a2a23d24a3b0ae8eac4a9acddc51aef
+      Runtime: python3.7
+      Timeout: 240
+      Environment:
+        Variables:
+          cw_logs_retention:
+            Ref: pCloudwatchLogsRetentionPeriod
+          assume_role_name:
+            Ref: pAssumeRoleName
+          OU_ID:
+            Ref: pOrganizationUnitId
+  rLambdaExRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+      - PolicyName: AWSCloudwatchLogsExporterPolicy
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:DescribeLogGroups
+            - logs:PutRetentionPolicy
+            - organizations:ListAccountsForParent
+            - sts:AssumeRole
+            Resource: '*'
+  rScheduledRuleForLambdaFunc:
+    Type: AWS::Events::Rule
+    DependsOn: rCWLogSetRetentionFunction
+    Properties:
+      Description: Scheduled Rule for export cloudwatch logs to s3 Bucket
+      ScheduleExpression:
+        Ref: pLambdaTiggerSchedular
+      State: ENABLED
+      Targets:
+      - Arn:
+          Fn::GetAtt:
+          - rCWLogSetRetentionFunction
+          - Arn
+        Id:
+          Ref: pTargetId
+  rPermissionForEventsToInvokeLambda:
+    Type: AWS::Lambda::Permission
+    DependsOn: rCWLogSetRetentionFunction
+    Properties:
+      FunctionName:
+        Ref: rCWLogSetRetentionFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+        - rScheduledRuleForLambdaFunc
+        - Arn

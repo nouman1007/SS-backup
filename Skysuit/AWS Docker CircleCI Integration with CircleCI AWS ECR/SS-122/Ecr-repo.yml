@@ -1,0 +1,76 @@
+#===============================================================================
+# Create IAM Role & ECR Repository.
+#
+# (c) Enquizit, Inc 2019
+# v1.0 2020-07-15
+#================================================================================
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Create IAM Role & ECR Repository. 
+
+###################################################
+#
+# CloudFormation Interface Metadata
+#
+###################################################
+Metadata:
+
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: ECR Repository Information
+      Parameters:
+      - pRepositoryName
+      
+    ParameterLabels:
+
+     pRepositoryName: 
+       default:  Repository Name. 
+
+###################################################
+#
+# Template Parameter Definitions
+#
+###################################################
+        
+Parameters: 
+    
+  pRepositoryName: 
+    Type: String
+    Default: share
+    Description: Circleci  
+
+  # pTagValue2: 
+    # Type: String
+    # Default: Win
+    # Description: Tag value2
+    
+###################################################
+#
+# Resource definitions
+#
+###################################################
+
+Resources:
+
+    MyRepository: 
+      Type: AWS::ECR::Repository
+      Properties: 
+        RepositoryName: !Ref pRepositoryName
+        RepositoryPolicyText: 
+          Version: "2012-10-17"
+          Statement: 
+            - 
+              Sid: AllowPushPull
+              Effect: Allow
+              Principal: 
+                AWS: 
+                  - "arn:aws:iam::522955560990:user/circleci"
+              Action: 
+                - "ecr:GetDownloadUrlForLayer"
+                - "ecr:BatchGetImage"
+                - "ecr:BatchCheckLayerAvailability"
+                - "ecr:PutImage"
+                - "ecr:InitiateLayerUpload"
+                - "ecr:UploadLayerPart"
+                - "ecr:CompleteLayerUpload"

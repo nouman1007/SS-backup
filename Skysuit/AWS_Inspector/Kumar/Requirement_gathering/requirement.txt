@@ -1,0 +1,53 @@
+aws cloudformation package --template-file cloudwtch_logs_exporting_s3_bucket.yml --s3-bucket patch-lambda-code --output-template-file cloudwtch_logs_exporting_s3_bucket_packaged-template.yml
+
+aws cloudformation package --template-file inspector.yml --s3-bucket patch-lambda-code --output-template-file inspector_packaged_template.yml
+
+151200-1359360-1
+
+==============================================================================================================
+
+
+
+{
+  "source": [
+    "aws.inspector"
+  ],
+  "detail-type": [
+    "AWS API Call via CloudTrail"
+  ],
+  "detail": {
+    "eventSource": [
+      "inspector.amazonaws.com"
+    ],
+    "eventName": [
+      "ASSESSMENT_RUN_COMPLETED"
+    ]
+  }
+}
+
+======================================
+
+arn:aws:sns:${AWS::Region}:${AWS::AccountId}:!Ref pSnsTopicName
+==========================================================================================================================
+
+aws cloudformation package --template-file inspector_deployment_with_sns.yml --s3-bucket patch-lambda-code --output-template-file inspector_deployment_with_sns_packaged_template.yml
+
+if assessment run is running on same target it will give an error.
+
+Inspector-test
+
+0320-34600
+============================================================================================================================
+
+doesn't contain AssessmentTemplateArn key in object arn:aws:cloudformation:us-east-1:522955560990:stack/ns-ins-test/5db0b750-96ed-11eb-8e0e-12a7f5de922f|CreateInspectorResources|ef245607-a2e9-46b9-9e32-8535afb39d36 in S3 bucket cloudformation-custom-resource-storage-useast1
+
+=============================================================================================================================
+
+The following resource(s) failed to create: [RespondToInspectorFindingsPolicy, InspectorReportNotificationTopicPolicy]. Rollback requested by user.
+
+
+
+15- due to the death in my family.
+16- till out of city won't be able to attend the office today 
+26- I have severe pain in my stomach due to food poisoning,not able to work, so taking sick leave today. Thanks!
+29- Hi Team, Nouman Shaifq just reported that due to electricity breakdown since 12:00 am (local - PKT) and the exhausted battery of his laptop, he will restart the work once the power is back.

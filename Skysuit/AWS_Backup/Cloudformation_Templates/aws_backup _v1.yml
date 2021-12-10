@@ -1,0 +1,226 @@
+#===============================================================================
+# Create AWS Backup for the following services.
+# 1-  EC2
+# 2-  EFS
+# 3-  
+#
+#
+# (c) Enquizit, Inc 2019
+# v1.0 2020-07-15
+#================================================================================
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: This CloudFormation template creates a backup for EC2 .
+
+#-----------------------------------------------------------
+# Metadata
+#-----------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+
+    ParameterGroups:
+      - Label:
+            default: Backup Vault Description
+        Parameters:
+          - pBackupVaultName
+          
+      - Label:
+            default: Backup Plan Description
+        Parameters:
+          - pBackupPlanName
+          - pRuleName
+          - pScheduleExpression
+          - pStartWindowMinutes
+          - pCompletionWindowMinutes
+          - pRetentionPeriod
+          # - pMoveToColdStorage # AWS support Only for EFS
+
+      - Label:
+            default: Backup Resource Selection Description
+        Parameters:
+          - pBackupSelectionName
+          - pResourcesTagKey
+          - pResourcesTagValue
+
+    ParameterLabels:
+      pBackupVaultName:
+        default: Backup vault name
+      pBackupPlanName:
+        default: Backup Plan Name
+      pRuleName:
+        default: Rule Name For Backup Plan
+      pScheduleExpression:
+        default: Schedule Expression
+      pStartWindowMinutes:
+        default:  Start window in minutes
+      pCompletionWindowMinutes:
+        default: Completion window in minutes
+      pRetentionPeriod:
+        default: Retention time period
+      # pMoveToColdStorage:
+        # default:Move To Cold Storage # AWS support Only for EFS
+      pBackupSelectionName:
+        default: Backup Selection Name
+      pResourcesTagKey:
+        default: Resource Tag Key
+      pResourcesTagValue:
+        default: Resource Tag Value
+
+#-----------------------------------------------------------
+# Parameters
+#-----------------------------------------------------------
+
+Parameters:
+
+  pBackupVaultName:
+    Description: |
+      Backup vault name inwhich backup is going to store.
+    Type: String
+    Default: Ec2BackupVault
+    
+  pBackupPlanName:
+    Description: |
+      Backup vault name inwhich backup is going to store.
+    Type: String
+    Default: Ec2BackupPlan
+  
+  pRuleName:
+    Description: |
+      Rule name for backup plan.
+    Type: String
+    Default: Ec2BackupVault
+    
+  pScheduleExpression:
+    Description: |
+      Schedule Expression In UTC
+    Type: String
+    Default: cron(30 8 ? * * *)
+    
+  pStartWindowMinutes:
+    Description: |
+      Start window in minutes
+    Type: Number
+    Default: 480
+    
+  pCompletionWindowMinutes:
+    Description: |
+      Completion window in minutes
+    Type: Number
+    Default: 10080
+
+  pRetentionPeriod:
+    Description: |
+      Retention time period in days for backup.
+    Type: Number
+    Default: 365
+    
+  # pMoveToColdStorage:
+    # Description: |
+      # Move To Cold Storage period in days after backup.
+    # Type: Number
+    # Default: 30
+
+    
+  pBackupSelectionName:
+    Description: |
+      Backup Resource Selection name.
+    Type: String
+    Default: TagBasedBackupSelection
+    
+  pResourcesTagKey:
+    Description: |
+      Backup Resource Tag Key.
+    Type: String
+    Default: Name
+    
+  pResourcesTagValue:
+    Description: |
+      Backup Resource Tag Value.
+    Type: String
+    Default: backup-test
+  
+#-----------------------------------------------------------
+# Resources
+#-----------------------------------------------------------
+
+Resources:
+  # KMSKey:
+    # Type: AWS::KMS::Key
+    # Properties:
+      # Description: "Encryption key for daily"
+      # EnableKeyRotation: True
+      # Enabled: True
+      # KeyPolicy:
+        # Version: "2012-10-17"
+        # Statement:
+        # - Effect: Allow
+          # Principal:
+            # "AWS": { "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:root" }
+          # Action:
+          # - kms:*
+          # Resource: "*"
+          
+  rBackupVaultForEc2:
+    Type: "AWS::Backup::BackupVault"
+    Properties:
+      BackupVaultName:
+        Ref : pBackupVaultName 
+      # EncryptionKeyArn: !GetAtt KMSKey.Arn
+
+  rEc2BackupPlan:
+    Type: "AWS::Backup::BackupPlan"
+    Properties:
+      BackupPlan:
+        BackupPlanName: !Ref pBackupPlanName
+        BackupPlanRule:
+          -
+            RuleName: !Ref pRuleName
+            TargetBackupVault: !Ref rBackupVaultForEc2
+            ScheduleExpression: !Ref pScheduleExpression
+            StartWindowMinutes: !Ref pStartWindowMinutes
+            CompletionWindowMinutes: !Ref pCompletionWindowMinutes
+
+            RecoveryPointTags:
+              Key : purpose
+              Value: backup-test
+            Lifecycle:
+              # MoveToColdStorageAfterDays: !Ref pMoveToColdStorage # AWS support Only for EFS
+              DeleteAfterDays: !Ref pRetentionPeriod
+                          
+    DependsOn: rBackupVaultForEc2
+
+          
+  rBackupRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+     AssumeRolePolicyDocument:
+       Version: "2012-10-17"
+       Statement:
+         -
+          Effect: "Allow"
+          Principal:
+            Service:
+              - "backup.amazonaws.com"
+          Action:
+            - "sts:AssumeRole"
+     ManagedPolicyArns:
+       -
+        "arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup"
+        # "arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForRestores"
+
+  rBackupSelection:
+    Type: "AWS::Backup::BackupSelection"
+    Properties:
+      BackupSelection:
+        SelectionName: !Ref pBackupSelectionName
+        IamRoleArn: !GetAtt rBackupRole.Arn
+        ListOfTags:
+         -
+           ConditionType: "STRINGEQUALS"
+           ConditionKey: !Ref pResourcesTagKey
+           ConditionValue: !Ref pResourcesTagValue
+           
+      BackupPlanId: !Ref rEc2BackupPlan
+    DependsOn: rEc2BackupPlan          
+        

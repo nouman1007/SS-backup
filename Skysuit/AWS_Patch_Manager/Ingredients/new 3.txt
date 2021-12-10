@@ -1,0 +1,77 @@
+
+
+Type: AWS::Events::Rule
+Properties: 
+  Description: String
+  EventBusName: String
+  EventPattern: Json
+  Name: String
+  RoleArn: String
+  ScheduleExpression: String
+  State: String
+  Targets: 
+    - Target
+	
+	source:
+- aws.organizations
+	
+	
+======================================================================================
+
+ScheduledRule: 
+  Type: AWS::Events::Rule
+  Properties: 
+    Description: "ScheduledRule"
+    ScheduleExpression: "rate(10 minutes)"
+    State: "ENABLED"
+    Targets: 
+      - 
+        Arn: 
+          Fn::GetAtt: 
+            - "LambdaFunction"
+            - "Arn"
+        Id: "TargetFunctionV1"
+PermissionForEventsToInvokeLambda: 
+  Type: AWS::Lambda::Permission
+  Properties: 
+    FunctionName: 
+      Ref: "LambdaFunction"
+    Action: "lambda:InvokeFunction"
+    Principal: "events.amazonaws.com"
+    SourceArn: 
+      Fn::GetAtt: 
+        - "ScheduledRule"
+        - "Arn"	
+======================================================================================
+
+EventRule: 
+  Type: AWS::Events::Rule
+  Properties: 
+    Description: "EventRule"
+    EventPattern: 
+      source: 
+        - "aws.organizations"
+      detail-type: 
+        - "All Events"
+      detail: 
+        state: 
+          - "stopping"
+    State: "ENABLED"
+    Targets: 
+      - 
+        Arn: 
+          Fn::GetAtt: 
+            - "LambdaFunction"
+            - "Arn"
+        Id: "TargetFunctionV1"
+PermissionForEventsToInvokeLambda: 
+  Type: AWS::Lambda::Permission
+  Properties: 
+    FunctionName: 
+      Ref: "LambdaFunction"
+    Action: "lambda:InvokeFunction"
+    Principal: "events.amazonaws.com"
+    SourceArn: 
+      Fn::GetAtt: 
+        - "EventRule"
+        - "Arn"

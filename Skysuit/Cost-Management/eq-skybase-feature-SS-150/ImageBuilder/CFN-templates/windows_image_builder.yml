@@ -1,0 +1,137 @@
+#===============================================================================
+# Deploy STIG Complaint Golden AMIs
+# (c) Enquizit, Inc 2019
+# v1.0 2020-02-11
+#================================================================================
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'This CloudFormation Template will create Windows Image pipeline for STIG Complaint Golden AMIs using EC2 Image Builder'
+#==================================================
+# Parameters
+#==================================================
+              
+Parameters:
+
+  pWindowParentImage:
+    Description: Parent Image for the Image recipe
+    Type: String
+
+  pWindowStigComponents:
+    Description: Components of the Image recipe
+    Type: String
+
+  pWindowRebootComponents:
+    Description: Components of the Image recipe
+    Type: String
+
+  pWindowSourceStackName:
+    Description: "Source stack name"
+    Type: String
+
+  pWindowImageRecipeName:
+    Description: Window Recipe Name
+    Type: String
+
+  pWindowInfrastructureConfigurationName:
+    Description: Window Infrastructure Configuration Name
+    Type: String
+
+  pWindowImagePipelineName:
+    Description: Window IMage Builder Pipeline Name
+    Type: String
+    
+  pWindowDistributionConfigurationName:
+    Description: Window Distribution Configuration Name
+    Type: String
+
+#==================================================
+# Resources
+#==================================================
+
+Resources:
+
+#====================================================================
+#              WINDOW STIG AMI PIPELINE
+#====================================================================                                                                                   
+
+  rWindowImageRecipe:
+    Type: AWS::ImageBuilder::ImageRecipe
+    Properties:
+      Name: !Ref pWindowImageRecipeName
+      Version: 1.0.1
+      ParentImage: !Ref pWindowParentImage
+      Description: Golden AMI with Window STIG Component Receipe 
+      Components:
+        - ComponentArn: !Ref pWindowStigComponents
+        - ComponentArn: !Ref pWindowRebootComponents
+      Tags:
+        ImageRecipeTagKey: window-recipe-tag
+
+  rWindowInfrastructureConfiguration:
+    Type: AWS::ImageBuilder::InfrastructureConfiguration
+    Properties: 
+      Name: !Ref pWindowInfrastructureConfigurationName
+      InstanceProfileName: 
+        Fn::ImportValue:
+          Fn::Sub: "${pWindowSourceStackName}-InstanceProfile"
+      Description: Infrastucture for Window Image pipeline.
+      InstanceTypes:
+        - t2.xlarge
+      KeyPair:
+        Fn::ImportValue:
+          Fn::Sub: "${pWindowSourceStackName}-KeyName"
+      TerminateInstanceOnFailure: true
+      SecurityGroupIds: 
+        - Fn::ImportValue:
+            Fn::Sub: "${pWindowSourceStackName}-SecurityGroup"
+      SubnetId:
+        Fn::ImportValue:
+          Fn::Sub: "${pWindowSourceStackName}-PublicSubnet"
+      Tags:
+        Name: nida-window-infra-config-tag
+
+  rWindowImagePipeline:
+    Type: AWS::ImageBuilder::ImagePipeline
+    Properties:
+      Description: Image pipeline to deploy Window Golden AMIs.
+      DistributionConfigurationArn: !GetAtt rWindowDistributionConfiguration.Arn
+      ImageRecipeArn: !Ref rWindowImageRecipe
+      InfrastructureConfigurationArn: !Ref rWindowInfrastructureConfiguration
+      Name: !Ref pWindowImagePipelineName
+        
+  rWindowDistributionConfiguration:
+    Type: AWS::ImageBuilder::DistributionConfiguration
+    Properties:
+      Name: !Ref pWindowDistributionConfigurationName
+      Description: Output AMI configuration
+      Distributions:
+        - Region: !Ref 'AWS::Region'
+          AmiDistributionConfiguration:
+            Name: 'eqskybase Window Custom AMI final1 {{ imagebuilder:buildDate }}'
+            AmiTags:
+              share: true
+              Name: eqskybase-Windows-Custom-STIG-AMI-tag         
+
+#==============================================================
+#         Cloud Watch Event to Invoke Lambda
+#==============================================================          
+  rCloudwatchRuleInvokeLambda:
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: Schedule expression to trigger Lambda function
+      State: ENABLED
+      ScheduleExpression: "cron(0 10 1 * ? *)"   # Add Schedule expression based on the Image Bulder Pipeline Schedule
+      Targets:
+        - Arn: 
+            Fn::ImportValue:
+                !Sub "${pWindowSourceStackName}-AmiSharingLambdaArn"
+          Id: LambdaV1
+
+  rCloudWatchPermission: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: 
+            Fn::ImportValue:
+                !Sub "${pWindowSourceStackName}-AmiSharingLambdaName"
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt rCloudwatchRuleInvokeLambda.Arn

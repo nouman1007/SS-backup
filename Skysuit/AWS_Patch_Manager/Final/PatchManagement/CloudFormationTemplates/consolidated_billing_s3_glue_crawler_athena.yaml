@@ -1,0 +1,192 @@
+#===============================================================================
+# CFN YAML to create a crawler, Database and Athena table.
+#
+# Parameters section contains names that are substituted in the Resources section
+# These parameters are the names the resources created in the Data Catalog
+#
+# (c) Enquizit, Inc 2019
+# v1.0 2020-07-15
+#
+#================================================================================
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CFN YAML to create a crawler, Database and Athena table. It will be able to get Account alises details from cvs file and put in athena table to be querried with other tables in quicksight.
+
+###################################################
+#
+# CloudFormation Interface Metadata
+#
+###################################################
+Metadata:
+
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Crawler Information
+      Parameters:
+      - pCFNCrawlerName
+      - pCFNDatabaseName
+      - pCFNTablePrefixName
+      - pBucketName
+      
+    ParameterLabels:
+      pCFNCrawlerName:
+        default: cfn-crawler
+      pCFNDatabaseName:
+        default: cfn-database
+      pCFNTablePrefixName:
+        default: cfn-sample
+      pBucketName: 
+        default: Bucket name with folder name  <bucketname/foldername>
+
+###################################################
+#
+# Template Parameter Definitions
+#
+###################################################
+
+Parameters:                                                                                                       
+# The name of the crawler to be created
+  pCFNCrawlerName:  
+    Type: String
+    Default: patching-crawler
+    
+  pCFNDatabaseName:
+    Type: String
+    Default: patching-database
+    
+  pCFNTablePrefixName:
+    Type: String
+    Default: patching
+    
+  pBucketName: 
+    Type: String
+    Default: eq-resourcedatasync-us-east-1-112520250899/shared-account-522955560990
+    Description: Enter Bucket name with folder name  <bucketname/foldername>
+    
+
+###################################################
+#
+# Resource definitions
+#
+###################################################
+
+# Resources section defines metadata for the Data Catalog
+Resources:
+#Create IAM Role assumed by the crawler.
+  rCFNAliasesCrawlerRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - glue.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole'
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: AWSAliasesCrawlerPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:   # reviewnotes: pls use the aws managed policy basiclaambdaexecution policy unless we need some customization
+              - Effect: Allow
+                Action:
+                  - 'glue:UpdateDatabase'
+                  - 'glue:UpdatePartition'
+                  - 'glue:CreateTable'
+                  - 'glue:UpdateTable'
+                  - 'glue:ImportCatalogToGlue'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                  - 's3:PutObject'
+                # Resource: arn:aws:s3:::eqtest-bucket-for-reports/folder/*  # reviewnotes: "eqtest-bucket-for-reports"  can not be hardcoded
+                Resource: 
+                  - !Sub "arn:aws:s3:::${pBucketName}/*"
+
+# Create a database to contain tables created by the crawler
+  rCFNAliasesDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: !Ref pCFNDatabaseName # reviewnotes: this is not a required field as per documentation. if we dont give this will it be auto generated? is there a need for a specific name? ans:(yes we need that because to query in quicksigth)
+        Description: "AWS Glue container to hold metadata tables for the crawler"
+        
+ #Create a crawler to crawl the accounts data on a S3 bucket
+  rCFNAliasesCrawler:
+    Type: AWS::Glue::Crawler
+    DependsOn: rCFNAliasesDatabase
+    Properties:
+      Name: !Ref pCFNCrawlerName  # reviewnotes: this is not a required field as per documentation. if we dont give this will it be auto generated? is there a need for a specific name?
+      Role: !GetAtt rCFNAliasesCrawlerRole.Arn
+      #Classifiers: none, use the default classifier
+      Description: AWS Glue crawler to crawl account's aliases data.
+      #Schedule: none, use default run-on-demand
+      DatabaseName: !Ref rCFNAliasesDatabase
+      Targets:
+        S3Targets:
+          # Public S3 bucket with the accounts data
+          # - Path: "s3://eqtest-bucket-for-reports/folder/"  # reviewnotes: bucket name can not be hard coded
+          - Path: !Sub "s3://${pBucketName}" 
+      TablePrefix: !Ref pCFNTablePrefixName # reviewnotes:  do we need this?
+      SchemaChangePolicy:
+        UpdateBehavior: "UPDATE_IN_DATABASE"
+        DeleteBehavior: "LOG"
+        
+  # Custom lambda that Initialize the crawler
+  rAWSCrawlerInitializer:
+    Type: AWS::Lambda::Function
+    DependsOn: rCFNAliasesCrawler
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt rLambdaExRole.Arn
+      Code: '../Lambdas/consolidated_billing_crawler_initializer'
+      # Code:
+      #   S3Bucket:  
+      #     Ref: pLambdaCodeBucketName   # reviewnotes: Is this not EQ owned code? is there a need for this to be not a relative path?
+      #   S3Key:     
+      #     Ref: pS3Key
+      Runtime: python3.7
+      Timeout: 240
+      
+ # Lambda execution Role
+  rLambdaExRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: AWSAliasesCrawlerLambdaPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:  
+              - Effect: Allow
+                Action:
+                  - 'glue:StartCrawler'
+                Resource: '*'
+            
+# Custom resource for crawler initialization     
+  rAWSStartCURCrawler:
+    Type: 'Custom::AWSStartCrawler'
+    Properties:
+      ServiceToken: !GetAtt rAWSCrawlerInitializer.Arn
+      crawler_name:
+        Ref: pCFNCrawlerName

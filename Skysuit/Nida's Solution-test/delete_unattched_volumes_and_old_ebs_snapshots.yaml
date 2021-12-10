@@ -1,0 +1,240 @@
+#===============================================================================
+# Picks up the available volumes which are not attached
+# and deletes it.
+
+# (c) Enquizit, Inc 2019
+# v1.0 2021-06-02
+#================================================================================
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Picks up the available volumes which are not attached and deletes it.
+
+Parameters:
+  NumberOfDays:
+    Type: Number
+    Description: Number of days.
+###################################################
+#
+# Template Resource Definitions
+#
+###################################################
+  
+Resources:
+
+  # lambda that Picks up the available volumes which are not attached and deletes it.
+  rDeleteUnusedVolumesFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt rDeleteUnattachedVolumesRole.Arn
+      Runtime: python3.7
+      Timeout: 240
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          ec2 = boto3.client('ec2')
+          def handler(event,context):
+            availableVols = getAvailableVolumes()
+            deleteVolumes(availableVols)
+          def getAvailableVolumes():
+            # returns list of volumes in 'available' state
+            availableVolList = []
+            filterList = [{'Name': 'status', 'Values': ['available']}]
+            response = ec2.describe_volumes(Filters=filterList, MaxResults=500)
+            for v in response['Volumes']:
+              availableVolList.append(v['VolumeId'])
+            while('NextToken' in response):
+              response = ec2.describe_volumes(Filters=filterList, MaxResults=500, NextToken=response['NextToken'])
+              for v in response['Volumes']:
+                availableVolList.append(v['VolumeId'])
+            return availableVolList
+          def deleteVolumes(availableVols):
+            # delete unattched volumes.
+            for vol in availableVols:
+              response = ec2.delete_volume(VolumeId=vol)
+      
+  # Lambda execution Role
+  rDeleteUnattachedVolumesRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AmazonEC2FullAccess
+  
+  # Schedule Rule to invoke lambda function everyday at 6:00AM UTC
+  rDeleteUnAttachedVolumesRule: 
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: "Scheduled Rule for deletion of unattached volumes."
+      ScheduleExpression: "cron(0 6 * * ? *)"
+      State: "ENABLED"
+      Targets: 
+        - 
+          Arn: 
+            Fn::GetAtt: 
+              - "rDeleteUnusedVolumesFunction"
+              - "Arn"
+          Id: "TargetFunctionV1"
+  rPermissionForEventsToInvokeLambda: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: !Ref "rDeleteUnusedVolumesFunction"
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: 
+        Fn::GetAtt: 
+          - "rDeleteUnAttachedVolumesRule"
+          - "Arn"
+
+  # lambda that Picks up the available volumes which are not attached and deletes it.
+  rDeleteOldEbsSnapshotsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt rDeleteEBSsnapshotsLambdaExRole.Arn
+      Runtime: python3.7
+      Timeout: 240
+      Environment:
+        Variables:
+          NumberOfDays: !Ref NumberOfDays
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          from datetime import datetime, timezone
+
+
+          ec2 = boto3.client('ec2')
+
+          def handler(event,context):
+              OldDays = os.environ['NumberOfDays']
+              NumberofDays = int(OldDays)
+              
+              oldSnapshots = getOldSnapshots(NumberofDays)
+              snapshotsToDelete=checkTagsOfOldSnaps(oldSnapshots)
+              detach_ami(snapshotsToDelete)
+              deleteSnapshots(snapshotsToDelete) 
+              
+              
+          def getOldSnapshots(NumberofDays):
+              # returns list of snapshots which are older than "NumberOfDays"
+              #----------------------------------------------------------
+              # days_old = number of days from snapshot created.
+              #----------------------------------------------------------
+              oldSnapsList = []
+              
+              allResponse = ec2.describe_snapshots(OwnerIds=['self'])
+              for snap in allResponse['Snapshots']:
+                  days_old = (datetime.now(timezone.utc) - snap['StartTime']).days
+                  if days_old > NumberofDays:
+                      oldSnapsList.append(snap['SnapshotId'])
+              while('NextToken' in allResponse):
+                  allResponse = ec2.describe_snapshots(OwnerIds=['self'],NextToken=allResponse['NextToken'])
+                  for snap in allResponse['Snapshots']:
+                      days_old = (datetime.now(timezone.utc) - snap['StartTime']).days
+                      if days_old > NumberofDays:
+                          oldSnapsList.append(snap['SnapshotId'])
+              return oldSnapsList
+              
+          def checkTagsOfOldSnaps(oldSnapshots):
+              
+              # check old snapshots with tag: DoNotDelete = True
+              
+              FILTER_CRITERIA = json.loads( os.environ.get('FILTER', '[{"Name": "tag:DoNotDelete","Values": ["True"]}]'))
+              
+              snapShotsWithTag = []
+              snapShotsWithTagResponce = ec2.describe_snapshots(OwnerIds=['self'], Filters = FILTER_CRITERIA)
+              
+              for ids in snapShotsWithTagResponce['Snapshots']:
+                  snapShotsWithTag.append(ids['SnapshotId'])
+              while('NextToken' in snapShotsWithTagResponce):
+                  response = ec2.describe_snapshots(OwnerIds=['self'],NextToken=snapShotsWithTagResponce['NextToken'])
+                  for ids in response['Snapshots']:
+                      snapShotsWithTag.append(ids['SnapshotId'])    
+                  
+              # snapshotsToDelete = all old snapshots - snapshots with tag true    
+              snapshotsToDelete= [x for x in oldSnapshots  if x not in  snapShotsWithTag]
+              
+              return snapshotsToDelete
+
+          def detach_ami(snapshotsToDelete):
+              # check if snapshot which is about to delete is in use with any AMI.
+              # Gets AMI which is attached to snapshot from snapshotsToDelete list.
+              # deregister the ami.
+
+              amiId=[]
+              
+              for snapId in snapshotsToDelete:
+                  response = ec2.describe_images(
+                      Filters=[
+                          {
+                              'Name': 'block-device-mapping.snapshot-id',
+                              'Values': [snapId,]
+                          },
+                      ],
+                      Owners=['self',],
+                  )
+                  for amis in response['Images']:
+                      amiId.append(amis['ImageId'])
+              for i in amiId:
+                  response = ec2.deregister_image(ImageId=i)  
+                    
+          def deleteSnapshots(snapshotsToDelete):
+              # Deletes the snapshots!
+              for snap in snapshotsToDelete:
+                  response=ec2.delete_snapshot(SnapshotId=snap)
+    
+      
+ # Lambda execution Role
+  rDeleteEBSsnapshotsLambdaExRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AmazonEC2FullAccess
+  
+  # Schedule Rule to invoke lambda function everyday at 6:00AM UTC
+  rDeleteOldEbsSnapshotsRule: 
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: "Scheduled Rule to delete old EBS Snapshots."
+      ScheduleExpression: "cron(0 6 * * ? *)"
+      State: "ENABLED"
+      Targets: 
+        - 
+          Arn: 
+            Fn::GetAtt: 
+              - "rDeleteOldEbsSnapshotsFunction"
+              - "Arn"
+          Id: "TargetFunctionV1"
+  rPermissionForEventsToInvokeLambda: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: !Ref "rDeleteOldEbsSnapshotsFunction"
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: 
+        Fn::GetAtt: 
+          - "rDeleteOldEbsSnapshotsRule"
+          - "Arn"                

@@ -1,0 +1,204 @@
+#==============================================================================================
+# Create EventBusEstablishTrust, permission Policies, Lambda function to put event permissions
+# Get notification from member account through event bus and rule  will trigger the lambda.
+#
+# (c) Enquizit, Inc 2019
+# v1.0 2020-07-15
+#================================================================================
+
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Cloudformation Template for the management account for the budget control
+  solution
+
+###################################################
+#
+# Template Parameter Definitions
+#
+###################################################
+
+Parameters:
+
+  AccountList:
+    Type: String
+    AllowedPattern: ^"\d{12}"(,"\d{12}")*$|(^\s*)$
+    Description: List of comma-separated and double-quoted account numbers to monitor.
+      If you enter multiple secondary account IDs, you must also provide the primary
+      account ID in this parameter.
+  QuarantineOU:
+    Type: String
+    Description: Organization ID of the Quarantine OU
+
+###################################################
+#
+# Template Resource Definitions
+#
+###################################################
+
+Resources:
+
+  EventBusPermissionPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - events:PutPermission
+          - events:RemovePermission
+          Resource:
+            Fn::Join:
+            - ''
+            - - 'arn:'
+              - Ref: AWS::Partition
+              - ':events:'
+              - Ref: AWS::Region
+              - ':'
+              - Ref: AWS::AccountId
+              - :event-bus/default
+  
+  BudgetControlAWSOrganizationsPermissionPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - organizations:ListParents
+          - organizations:MoveAccount
+          - organizations:DescribeOrganizationalUnit
+          - organizations:ListAccountsForParent
+          - ses:SendEmail
+          Resource:
+          - Fn::Join:
+            - ''
+            - - 'arn:'
+              - Ref: AWS::Partition
+              - ':organizations::'
+              - Ref: AWS::AccountId
+              - :account/o-*/*
+          - Fn::Join:
+            - ''
+            - - 'arn:'
+              - Ref: AWS::Partition
+              - ':organizations::'
+              - Ref: AWS::AccountId
+              - :ou/o-*/ou-*
+  
+  BudgetControlAWSBudgetsPermissionPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - budgets:ViewBudget
+          Resource:
+            Fn::Join:
+            - ''
+            - - 'arn:'
+              - Ref: AWS::Partition
+              - ':budgets::'
+              - Ref: AWS::AccountId
+              - :budget/*
+  
+  EventBusEstablishTrust:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: '../Lambdas/EventBusEstablishTrust'
+      Handler: establish_trust.handler
+      Runtime: python3.8
+      Description: Python Function to Establish trust for EventBridge cross-account
+        events
+      MemorySize: 128
+      Timeout: 30
+      Policies:
+      - AWSLambdaBasicExecutionRole
+      - AWSLambda_ReadOnlyAccess
+      - Ref: EventBusPermissionPolicy
+      Tracing: Active
+
+  EstablishTrust:
+    Type: Custom::EventBusEstablishTrust
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+        - EventBusEstablishTrust
+        - Arn
+      ACCOUNT_IDS:
+        Ref: AccountList
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    
+  BudgetControlEventBridgeRuleTarget:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: '../Lambdas/budget_control_handler.py'
+      Handler: budget_control_handler.lambda_handler
+      Runtime: python3.8
+      Description: Python function to handle eventbridge rule for budget control
+      MemorySize: 512
+      Timeout: 60
+      Environment:
+        Variables:
+          QUARANTINE_OU:
+            Ref: QuarantineOU
+      Policies:
+      - AWSLambdaBasicExecutionRole
+      - AWSLambda_ReadOnlyAccess
+      - Ref: BudgetControlAWSOrganizationsPermissionPolicy
+      - SNSPublishMessagePolicy:
+          TopicName:
+            Fn::Join:
+            - ''
+            - - budget-action-notification-topic
+              - Fn::Select:
+                - 2
+                - Fn::Split:
+                  - /
+                  - Ref: AWS::StackId
+      Tracing: Active
+
+  BudgetControlEventBridgeRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        Fn::Join:
+        - ''
+        - - '{"account":['
+          # - Fn::If:
+          #   - SingleAccnt
+          # - Fn::Join:
+          #   - ''
+          #   - - '"'
+          #     - Ref: AWS::AccountId
+          #     - '",'
+          - Ref: AccountList
+          - '],'
+          - '"source":["budget-control-solution"],'
+          - '"detail-type":["Budget Threshold Breached"]'
+          - '}'
+      State: ENABLED
+      Targets:
+      - Arn:
+          Fn::GetAtt:
+          - BudgetControlEventBridgeRuleTarget
+          - Arn
+        Id: BudgetControlLambdaTarget
+
+  BudgetControlEventBridgeRuleTargetInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+        - BudgetControlEventBridgeRuleTarget
+        - Arn
+      Principal: events.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+        - BudgetControlEventBridgeRule
+        - Arn

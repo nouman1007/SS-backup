@@ -1,0 +1,249 @@
+#===============================================================================
+# Deploy Lambda
+# (c) Enquizit, Inc 2019
+# v1.0 2020-02-11
+#================================================================================
+AWSTemplateFormatVersion: 2010-09-09
+Description: This CloudFormation Template will create two Lambda functions and sets scedule on it.
+
+Parameters:
+
+  pBucketName:
+    Description: Give Bucket name 
+    Type: String
+
+  pStackName:
+    Description: Give unique name of stack to create pipelines.
+    Type: String
+    Default: ss-image-builders-stack
+
+  pFirstFunctionName:
+    Description: Give name for funtion which will pick the latest AMI for centos and create instance with that to run script from bucket.
+    Type: String
+    Default: ss-create-instance
+
+  pSecondFunctionName:
+    Description: Give name for second lambda function.
+    Type: String
+    Default: ss-create-stack
+
+  pRoleName: 
+    Description: Role that will attach to EC2 instance created by lambda to perform installations and invoke second lambda with payload.
+    Type: String
+    Default: ss-instance-role
+  
+  pInstanceProfileName:
+    Description: Intance profile name.
+    Type: String
+    Default: ss-instance-profile
+
+  pNetworkStackName:
+    Description: Provide name of network stack created before.
+    Type: String
+    Default: ss-networkstack  
+
+  pWindowParentImage:
+    Description: Parent Image for the Image recipe
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-windows-latest/Windows_Server-2019-English-Full-Base'
+
+  pWindowStigComponents:
+    Description: Provide stig Components arn of the Image recipe according to region.
+    Type: String
+    Default: arn:aws:imagebuilder:us-west-2:aws:component/stig-build-windows-medium/1.0.0/1
+
+  pWindowRebootComponents:
+    Description: Provide reboot Components arn of the Image recipe according to region.
+    Type: String
+    Default: arn:aws:imagebuilder:us-west-2:aws:component/reboot-windows/1.0.1/1
+
+  pWindowImageRecipeName:
+    Description: Give name for Window pipeline's Recipe.
+    Type: String
+    Default: ss-window-recipe
+
+  pWindowInfrastructureConfigurationName:
+    Description: Give name for Window Infrastructure Configuration.
+    Type: String
+    Default: ss-window-infra-config 
+
+  pWindowImagePipelineName:
+    Description: Give name fo rWindow IMage Builder Pipeline.
+    Type: String
+    Default: ss-window-image-pipeline
+    
+  pWindowDistributionConfigurationName:
+    Description: Give name foe Window Distribution Configuration.
+    Type: String
+    Default: ss-window-distribution
+
+  pCentosComponents:
+    Description: Give arn of Components of the Image recipe according to region.
+    Type: String
+    Default: arn:aws:imagebuilder:us-west-2:aws:component/stig-build-linux-medium/2.6.0/1
+
+  pCentosImageRecipe:
+    Description: Give name for Centos Image Recipe.
+    Type: String
+    Default: ss-Centos-recipe
+
+  pCentosInfrastructureConfiguration:
+    Description: Give name foe Centos Infrastructure Configuration.
+    Type: String
+    Default: ss-centos-infra-config
+
+  pCentosImagePipeline:
+    Description: Give name Centos Image Pipeline.
+    Type: String
+    Default: ss-centos-image-pipeline
+
+  pCentosDistributionConfiguration:
+    Description: Give name for Centos Distribution Configuration.
+    Type: String
+    Default: ss-centos-distribution       
+
+#==================================================
+# Resources
+#=====================================================
+Resources:
+
+  rLambda:
+    Type: AWS::Lambda::Function
+    Description: Lambda function able to get latest Centos AMI, launch instance using AMI, take image of EC2, terminate EC2.
+    Properties:
+      FunctionName: !Ref pFirstFunctionName
+      Runtime: python3.7
+      Role: !GetAtt rLambdaRole.Arn
+      Handler: pick-latest-ami-and-create-instance.handler
+      Timeout: '900'
+      Environment:
+        Variables:
+          Role_Name: !Ref rMyInstanceProfile
+          Security_Group:
+            Fn::ImportValue:
+              Fn::Sub: "${pNetworkStackName}-SecurityGroup"
+          Subnet:
+            Fn::ImportValue:
+              Fn::Sub: "${pNetworkStackName}-PublicSubnet"
+          Key:
+            Fn::ImportValue:
+              Fn::Sub: "${pNetworkStackName}-KeyName"
+      Code: 
+        S3Bucket: !Ref pBucketName
+        S3Key: pick-latest-ami-and-create-instance.zip
+
+  rLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service: [lambda.amazonaws.com]
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AmazonEC2FullAccess
+        - arn:aws:iam::aws:policy/IAMFullAccess
+        - arn:aws:iam::aws:policy/AmazonSSMFullAccess
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/AWSCloudFormationFullAccess
+        - arn:aws:iam::aws:policy/AWSImageBuilderFullAccess
+        - arn:aws:iam::aws:policy/AWSLambdaFullAccess
+        - !Ref rAssumeRolePolicy
+
+
+  rLambdasecond:
+    Type: AWS::Lambda::Function
+    Description: Lambda function able to take image ID and instance ID from payload and then terminate EC2, and create Pipeline stacks.
+    Properties:
+      FunctionName: !Ref pSecondFunctionName
+      Runtime: python3.7
+      Role: !GetAtt rLambdaRole.Arn
+      Handler: terminate_instance_and_create_pipeline_stack.handler
+      Timeout: '900'
+      Environment:
+        Variables:
+          Stack_Name: !Ref pStackName
+
+          Window_Parent_AMI: !Ref pWindowParentImage
+          Window_Stig_Component: !Ref pWindowStigComponents
+          Window_Reboot_Component: !Ref pWindowRebootComponents
+          Window_Recipe_Name: !Ref pWindowImageRecipeName
+          Window_Config_Name: !Ref pWindowInfrastructureConfigurationName
+          Window_Pipeline_Name: !Ref pWindowImagePipelineName
+          Window_Distribution_Name: !Ref pWindowDistributionConfigurationName
+
+          Centos_Component: !Ref pCentosComponents
+          Centos_Recipe_Name: !Ref pCentosImageRecipe
+          Centos_Config_Name: !Ref pCentosInfrastructureConfiguration
+          Centos_Pipeline_Name: !Ref pCentosImagePipeline
+          CentosDistribution: !Ref pCentosDistributionConfiguration
+
+          NeworkStack: !Ref pNetworkStackName
+
+      Code: 
+        S3Bucket: !Ref pBucketName
+        S3Key: terminate_instance_and_create_pipeline_stack.zip
+
+  rAssumeRolePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - 
+          Effect: Allow
+          Action:
+          - sts:AssumeRole
+          Resource:
+          - "*"    
+
+  rCloudwatchRuleInvokeLambda:
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: Schedule expression to trigger Lambda function
+      State: ENABLED
+      ScheduleExpression: "cron(0 8 1 * ? *)"  # lambda will run at 8:00AM(UTC) every ist day of month
+      Targets:
+        - Arn: !GetAtt rLambda.Arn
+          Id: LambdaV1
+
+  rCloudWatchPermission: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: !Ref rLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt rCloudwatchRuleInvokeLambda.Arn
+
+  rInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Role that will attach to EC2 instance created by lambda to perform installations and invoke second lambda with payload.
+      RoleName: !Ref pRoleName
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service: [ec2.amazonaws.com]  #instance role
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEC2FullAccess
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/AWSLambdaFullAccess    
+
+  rMyInstanceProfile: 
+    Type: AWS::IAM::InstanceProfile
+    Properties: 
+      InstanceProfileName: !Ref pInstanceProfileName
+      Path: "/"
+      Roles: 
+        - 
+          !Ref rInstanceRole

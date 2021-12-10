@@ -1,0 +1,97 @@
+#===============================================================================
+# Deploy STIG Complaint Golden AMIs
+# (c) Enquizit, Inc 2019
+# v1.0 2020-02-11
+#================================================================================
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'This CloudFormation Template will create SSM Parameters to store the latest AMI values'
+
+#==================================================
+# Parameters
+#==================================================
+Parameters:
+  pWindowPipelineARN:
+    Type: String
+    Description: Provide Window's Image BUilder Pipeline ARN created before this stack.
+    Default: arn:aws:imagebuilder:us-east-1:224233068863:image-pipeline/nida-window-image-pipeline
+
+  pCentosPipelineARN:
+    Type: String
+    Description: Provide Centos Image Builder PipeileinARN created before this stack.
+    Default: arn:aws:imagebuilder:us-east-1:224233068863:image-pipeline/nida-centos-image-pipeline
+
+  pWindowsSSMParameterName:
+    Type: String
+    Description: Provide window's ssm parameter's name.
+    Default: /service/ami-windows-latest/windows_server_2019_ami
+
+  pCentossSSMParameterName:
+    Type: String
+    Description: Provide centos ssm parameter's name.
+    Default: /service/ami-centos-latest/centos7_ami
+
+  pBucketName:
+    Description: Provide bucket name.
+    Type: String  
+
+
+
+#==================================================
+# Resources
+#==================================================
+Resources:   
+
+  rLambda:
+    Type: AWS::Lambda::Function
+    Description: Lambda will be able to get the latest AMIs from Window's pipeline and Centos Pipeline and put it in the SSM paramaters.
+    Properties:
+      Runtime: python3.7
+      Role: !GetAtt rLambdaRole.Arn
+      Handler: pick-latest-amis-from-pipeline-and-store-in-ssm.handler
+      Timeout: '200'
+      Code:
+        S3Bucket: !Ref pBucketName
+        S3Key: pick-latest-amis-from-pipeline-and-store-in-ssm.zip
+      Environment:
+        Variables: 
+          windows_pipeline_arn: !Ref pWindowPipelineARN
+          centos_pipeline_arn: !Ref pCentosPipelineARN
+          windows_parameter: !Ref pWindowsSSMParameterName
+          centos_parameter: !Ref pCentossSSMParameterName
+    
+  rLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service: [lambda.amazonaws.com]
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AmazonSSMFullAccess
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/AWSCloudFormationFullAccess
+        - arn:aws:iam::aws:policy/AWSImageBuilderFullAccess
+
+  rCloudwatchRuleInvokeLambda:
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: Schedule expression to trigger Lambda function
+      State: ENABLED
+      ScheduleExpression: "cron(0 11 1 * ? *)"  # Add Schedule expression based on the Image Bulder Pipeline Schedule
+      Targets:
+        - Arn: !GetAtt rLambda.Arn 
+          Id: LambdaV1
+
+  rCloudWatchPermission: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: !Ref rLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt rCloudwatchRuleInvokeLambda.Arn

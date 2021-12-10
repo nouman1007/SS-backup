@@ -1,0 +1,114 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Create organization policies
+     
+Resources:
+
+ # Custom lambda that creates an event on the logging buckets
+  PolicyCreatorFn:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: ctpolicycreator.lambda_handler
+      Description: setsup policy
+      Role: !GetAtt 'PolicyCreatorFnLambdaExecutionRole.Arn'
+      Runtime: python3.7
+      Timeout: 180
+      Environment:
+        Variables:
+          logging_level: INFO
+      Tags:
+        -
+          Key: 'Name'
+          Value: 'policycreator'
+      Code: '../Lambda/organization_policy'
+            
+  PolicyCreatorFnLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: Orgpolicy_RW
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Sid: org1
+              Effect: Allow
+              Action:
+              - organizations:ListPoliciesForTarget
+              - organizations:DescribeEffectivePolicy
+              - organizations:ListTargetsForPolicy
+              - organizations:UpdatePolicy
+              - organizations:DetachPolicy
+              - organizations:EnablePolicyType
+              - organizations:AttachPolicy
+              - organizations:DeletePolicy
+              - organizations:DisablePolicyType
+              - organizations:DescribePolicy
+              - organizations:ListPolicies
+              - organizations:CreatePolicy
+              Resource: "*"
+
+
+  rCreationDeny:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt PolicyCreatorFn.Arn
+      PolicyName: !Sub ${AWS::StackName}-CreationDeny
+      PolicyType: SERVICE_CONTROL_POLICY
+      Description: "This SCP denies Creation to any resource"
+      PolicyDoc:
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Deny",
+                    "Action": [
+                        "s3:Create*",
+                        "ec2:Create*",
+                        "cloudtrail:Create*",
+                        "elasticsearch:Create*",
+                        "iam:Create*",
+                        "elasticloadbalancingv2:Create*",
+                        "acm:Create*",
+                        "rds:Create*",
+                        "redshift:Create*",
+                        "ssm:Create*",
+                        "cloudwatch:Create*",
+                        "cloudformation:Create*",
+                        "autoscaling:Create*",
+                        "dynamodb:Create*",
+                        "codebuild:Create*",
+                        "waf:Create*",
+                        "cloudfront:Create*",
+                        "lambda:Create*",
+                        "networkfirewall:Create*",
+                        "elasticbeanstalk:Create*",
+                        "wafv2:Create*",
+                        "shield:Create*",
+                        "shieldregional:Create*",
+                        "wafregional:Create*",
+                        "apigateway:Create*",
+                        "apigatewayv2:Create*",
+                        "config:Create*",
+                        "codepipeline:Create*",
+                        "servicecatalog:Create*",
+                        "sqs:Create*",
+                        "kms:Create*",
+                        "qldb:Create*",
+                        "secretsmanager:Create*",
+                        "sns:Create*",
+                    ],
+                    "Resource": "*"
+                }
+            ]
+        }

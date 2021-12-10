@@ -1,0 +1,69 @@
+#===============================================================================
+# Create Security Hub in individual account and region.
+#
+# (c) Enquizit, Inc 2019
+# v1.0 2020-07-15
+#================================================================================
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Security Hub in individual account and region. 
+
+###################################################
+#
+# CloudFormation Interface Metadata
+#
+###################################################
+Metadata:
+
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Security Hub Information
+      Parameters:
+      - pInstanceTagValue1
+      - pInstanceTagValue2
+      
+    ParameterLabels:
+
+     pTagValue1: 
+       default:  Tag Value 1. 
+     pTagValue2:
+       default:  Tag Value 2.
+
+###################################################
+#
+# Template Parameter Definitions
+#
+###################################################
+        
+Parameters: 
+    
+  pTagValue1: 
+    Type: String
+    Default: share
+    Description: Tag value1  
+
+  pTagValue2: 
+    Type: String
+    Default: Win
+    Description: Tag value2
+    
+###################################################
+#
+# Resource definitions
+#
+###################################################
+
+Resources:
+
+Description: Security Hub with Tags
+Resources:
+  rSecurityHubWithTags:
+    Type: 'AWS::SecurityHub::Hub'
+    Properties:
+      Tags:
+        key1: !Ref pTagValue1
+        key2: !Ref pTagValue2
+Outputs:
+  HubArn:
+    Value: !Ref rSecurityHubWithTags

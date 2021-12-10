@@ -1,0 +1,115 @@
+Parameters:
+  S3URI:
+    Type: String
+    Default: s3://prowler-224233068863-eu-west-2
+    Description: Enter your S3 URI.
+  ROLE:
+    Type: String
+    Default: ProwlerXA-Role
+    Description: Enter the name of the role that you are using.
+  S3Account:
+    Type: String
+    Default: 224233068863
+    Description: Enter ID of the account that contains the S3 bucket.
+  S3Account:
+    Type: String
+    Default: 224233068863
+    Description: Enter ID of the account that contains the S3 bucket.
+  ECRRepositoryURI:
+    Type: String
+    Default: 224233068863.dkr.ecr.us-east-1.amazonaws.com/prowler-image
+    Description: "Enter ECR Repository URI"
+  PersonalAccessToken:
+    Type: String
+    Default: sakldjklasjdklasj......
+    Description: "Enter Git Perosnal access token that have admin privillages to the GIT repository"
+  
+Resources:
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action: ['sts:AssumeRole']
+          Effect: Allow
+          Principal:
+            Service: [codebuild.amazonaws.com]
+        Version: '2012-10-17'
+      Path: /
+      Policies:
+        - PolicyName: CodeBuildAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Action:
+                  - "logs:*"
+                  - "S3:*"
+                  - "ECR:*"
+                  - "*"
+                Effect: Allow
+                Resource: '*'
+  MyProject:
+    Type: AWS::CodeBuild::SourceCredential
+    Properties: 
+      AuthType: PERSONAL_ACCESS_TOKEN
+      ServerType: GITHUB 
+      Token: !Ref PersonalAccessToken   
+      
+  Project:
+    Type: AWS::CodeBuild::Project
+    Properties: 
+      Artifacts: 
+        Type: NO_ARTIFACTS
+      Description: "Code build project to create a image from dockerfile and some shell scripts present in a S3 bucket and push it to ECR"
+      
+      Environment: 
+        ComputeType: BUILD_GENERAL1_SMALL
+        EnvironmentVariables: 
+          - Name: S3
+            Type: PLAINTEXT
+            Value: !Ref S3URI
+          - Name: ROLE2
+            Type: PLAINTEXT
+            Value: !Ref ROLE
+          - Name: S3ACCOUNT
+            Type: PLAINTEXT
+            Value: !Ref S3Account   
+          - Name: RepositoryURI
+            Type: PLAINTEXT
+            Value: !Ref ECRRepositoryURI
+        Image: aws/codebuild/standard:4.0
+        PrivilegedMode: true
+        Type: LINUX_CONTAINER
+      
+      LogsConfig: 
+         CloudWatchLogs: 
+             GroupName: Prowler-creation
+             Status: ENABLED
+             StreamName: logs-for-imagebuild 
+      Name: Prowler-push-to-ECR
+      QueuedTimeoutInMinutes: 20
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Source: 
+         Location: https://github.com/enquizit/eq-skybase.git
+         Type: GITHUB
+         BuildSpec: Prowler/code-build/buildspec.yml
+      SourceVersion:
+         feature/SS-140
+      
+    #   Triggers: 
+    #       BuildType: BUILD
+    #       FilterGroups: 
+    #         - - Type: EVENT
+    #             Pattern: PUSH
+    #           - Type: FILE_PATH
+    #             Pattern: code-build/
+    #             ExcludeMatchedPattern: false
+              
+                
+    #       Webhook: true
+
+          
+      Tags: 
+        - Key: Created-By 
+          Value: Saud
+      TimeoutInMinutes: 21

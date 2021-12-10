@@ -1,0 +1,44 @@
+Unknown Filter Key: MSRC_  
+Invalid Filter Value: CriticalUpdates for Key: CLASSIFICATION  valid values are:          (Service: AmazonSSM; Status Code: 400; Error Code: ValidationException; Request ID: 60f0a1a2-77aa-4548-bf62-0ed5f90e3075)
+
+=====================
+
+Invalid Filter Value: AmazonLinux2018.03 for Key: PRODUCT  valid values are:                         
+CentOS7.0  
+CentOS7.1  
+CentOS7.1  
+CentOS7.2  
+CentOS7.2 
+CentOS7.3  
+CentOS7.3  
+CentOS7.4  
+CentOS7.4  
+CentOS7.5  
+CentOS7.5  
+CentOS7.6  
+CentOS7.6  
+CentOS7.7  
+CentOS7.7  
+CentOS7.8 
+CentOS8  
+CentOS8.0  
+CentOS8.0  
+CentOS8.1  
+CentOS8.1  
+CentOS8.2 (Service: AmazonSSM; Status Code: 400; Error Code: ValidationException; Request ID: f919c92f-cbb7-4a74-ace0-8067cdaf03ca)
+=================
+	1 validation error detected: Value 'pb-053d10d7015d29f4f' at 'taskType' failed to satisfy constraint: Member must satisfy enum value set: [LAMBDA, STEP_FUNCTIONS, AUTOMATION, RUN_COMMAND]. (Service: AmazonSSM; Status Code: 400; Error Code: ValidationException; Request ID: fc8a8baf-3450-406b-8f0f-09fd94365bc3)
+	
+	
+	
+	import boto3
+client = boto3.client('ec2', region_name='ap-southeast-2')
+...
+client.delete_tags(Resources=[instance.id],Tags=[{"Key": non_compliant_tag_name}])
+
+
+=============================================================================================
+
+aws cloudformation package --template-file AWS_Patch_Manager\instance_profile_assignment.yml --s3-bucket patch-lambda-code --output-template-file      instance_profile_assignment_packaged.yml
+
+aws cloudformation deploy --template-file D:\Skysuit\instance_profile_assignment_packaged.yml --stack-name <YOUR STACK NAME> --capabilities CAPABILITY_IAM

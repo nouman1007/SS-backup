@@ -1,0 +1,282 @@
+# This templates helps to find the ec2 instances which are using non-compliant AMI's (deprecated) and auto-remediate 
+# by sending SNS notifications and stopping the non-compliant ec2 instances.
+# 2021-1-1 v1.0
+
+
+AWSTemplateFormatVersion: 2010-09-09
+Description: This CloudFormation template will detect ec2 instances which are using non-compliant ami's (deprecated) and also auto-remediate them.
+#==================================================
+# Setup the UI if the console is being used
+#==================================================
+Metadata:
+  AWS::CloudFormation::Interface:
+
+    ParameterGroups:
+    - Label:
+        default: AWS Config details
+      Parameters:
+        - pSNSTopic
+        - pSNSEmailAddress
+        - pConfigRuleName
+        - pCloudWatchConfigEvent
+        - pCustomConfigRuleFunction
+        - pBucket
+        - pS3Key
+
+    ParameterLabels:
+      pSNSTopic:
+        default: SNS Topic
+      pSNSEmailAddress:
+        default: Notification Email Address
+      pConfigRuleName:
+        default: Config Rule Name
+      pCloudWatchConfigEvent:
+        default: Cloud Watch Config Event Rule
+      pCustomConfigRuleFunction:
+        default: Custom config rule function.  
+      pS3bucket:
+        default: S3 Bucket  
+      pS3Key:
+        default: Zip file  
+
+
+#==================================================
+# Parameters
+#==================================================
+Parameters:
+
+  pConfigRuleName:
+    Type: String
+    Description: The name that you assign to the AWS Config rule.
+    
+  pSNSEmailAddress:
+    Type: String
+    Description: The endpoint that receives notifications from the Amazon SNS topic.
+
+  pSNSTopic:
+    Type: String
+    Description: SNS topic name for notifications.
+
+  pCloudWatchConfigEvent:
+    Type: String
+    Description: Cloud Watch event rule name for Config Rule Compliance Change
+  
+  pCustomConfigRuleFunction:
+    Type: String
+    Description: Name of lambda function evaluating custom config rule.
+
+  pS3bucket:
+    Type: String
+    Description: Name of s3 bucket for python script.  
+
+  pS3Key:
+    Type: String  
+    Default: Zip file of python script.
+
+#==================================================
+# Resources
+#==================================================
+
+Resources:
+  rCustomConfigRuleFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref pCustomConfigRuleFunction
+      Code:
+        S3Bucket: !Ref pS3bucket
+        S3Key: !Ref pS3Key
+      Description: Function is evaluation custom config rule against deprecated AMIs based on tag having value of date. 
+      Handler: custom_config_rule_function.lambda_handler
+      Role:
+        'Fn::GetAtt':
+          - rCustomConfigRuleFunctionIamRole
+          - Arn 
+      Runtime: python3.8
+      Timeout: '300'
+  
+
+  # Custom Config rule for deprecated-ami by tag and triggers lambda function.
+  rApprovedInstanceByAmiConfigRule:
+    Type: AWS::Config::ConfigRule
+    Properties:
+      ConfigRuleName: !Ref pConfigRuleName
+      Description: Checks whether running instances are using deprecated AMIs.
+      Scope:
+        ComplianceResourceTypes:
+        - "AWS::EC2::Instance"
+      Source:
+        Owner: "CUSTOM_LAMBDA"
+        SourceDetails: 
+        - 
+          EventSource: "aws.config"
+          MessageType: "ConfigurationItemChangeNotification"
+        -  
+          EventSource: "aws.config"
+          MessageType: "OversizedConfigurationItemChangeNotification"
+        SourceIdentifier: 
+          Fn::GetAtt: 
+            - rCustomConfigRuleFunction
+            - Arn
+
+  # Cloud Watch event rule for Config rule Compliance change
+  rConfigRuleComplianceChange:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Ref pCloudWatchConfigEvent
+      Description: Config Rule Compliance Change (deprecated AMI)
+      EventPattern:
+        source:
+        - aws.config
+        detail-type:
+        - Config Rules Compliance Change
+        detail:
+          messageType:
+          - ComplianceChangeNotification
+          newEvaluationResult:
+            complianceType:
+            - NON_COMPLIANT
+      State: ENABLED
+      Targets:
+        - Arn: !Ref rConfigRuleComplianceTopic
+          Id: ConfigRuleSNSTopic
+          InputTransformer:
+            InputPathsMap: {"awsRegion":"$.detail.awsRegion","resourceId":"$.detail.resourceId","awsAccountId":"$.detail.awsAccountId","compliance":"$.detail.newEvaluationResult.complianceType","rule":"$.detail.configRuleName","time":"$.detail.newEvaluationResult.resultRecordedTime","resourceType":"$.detail.resourceType"}
+            InputTemplate: '"At time <time> (UTC),"
+            
+            "AWS Config rule: <rule> evaluated the Resource type: <resourceType> with Instance Id: <resourceId>"
+            "And found the Compliance Status as: <compliance> in Account: <awsAccountId> and Region: <awsRegion>."
+            "All the non-compliant instances will be stopped automatically if running."
+            "For more details, open the AWS Config console at https://console.aws.amazon.com/config/home?region=<awsRegion>#/timeline/<resourceType>/<resourceId>/configuration"'
+
+  # SNS Topic to notify the user
+  rConfigRuleComplianceTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+        - Endpoint: !Ref pSNSEmailAddress
+          Protocol: "email"
+      TopicName: !Ref pSNSTopic
+
+  # Allow CloudWatch events to publish to the SNS topic
+  rConfigSNSTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Sid: allow-sns-publish
+          Effect: Allow
+          Principal:
+            Service: events.amazonaws.com
+          Action: sns:Publish
+          Resource: !Ref rConfigRuleComplianceTopic
+      Topics:
+      - !Ref rConfigRuleComplianceTopic
+
+  # Auto-remediation if non-compliant resource found
+  rBasicRemediationConfiguration:
+    Type: "AWS::Config::RemediationConfiguration"
+    DependsOn: rApprovedInstanceByAmiConfigRule
+    Properties:
+      Automatic: true
+      ConfigRuleName: !Ref pConfigRuleName
+      MaximumAutomaticAttempts: 5
+      RetryAttemptSeconds: 60
+      TargetId: AWS-StopEC2Instance
+      TargetType: SSM_DOCUMENT
+      TargetVersion: "1"
+      Parameters:
+        AutomationAssumeRole:
+          StaticValue:
+            Values:
+              - 'Fn::GetAtt':
+                  - rAutoRemediationIamRole
+                  - Arn
+        InstanceId:
+          ResourceValue:
+            Value: RESOURCE_ID
+
+  # IAM role for SSM Automation
+  rAutoRemediationIamRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+                - events.amazonaws.com
+                - ssm.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonSSMAutomationRole'
+      Policies: []
+
+  # IAM policy
+  rAutomationPassRolePolicy:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: passAutomationRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'iam:PassRole'
+            Resource:
+              'Fn::GetAtt':
+                - rAutoRemediationIamRole
+                - Arn
+      Roles:
+        - Ref: rAutoRemediationIamRole
+  
+  rConfigPermissionToCallLambda: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: 
+        Fn::GetAtt: 
+          - rCustomConfigRuleFunction
+          - Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "config.amazonaws.com"
+
+
+  rCustomConfigRuleFunctionIamRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonEC2FullAccess'
+        - 'arn:aws:iam::aws:policy/CloudWatchFullAccess' 
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+        - 'arn:aws:iam::aws:policy/service-role/AWSConfigRulesExecutionRole'
+        - 'arn:aws:iam::aws:policy/AmazonSNSFullAccess'
+
+
+#=================================================       
+# Outputs
+#==================================================
+Outputs:
+
+  NonCompliantAMIConfigRule:
+    Description: Approved AMI by Tags Config Rule
+    Value: !Ref rApprovedInstanceByAmiConfigRule 
+
+  CloudWatchEventRule:
+    Description: Cloud Watch event rule name
+    Value: !Ref rConfigRuleComplianceChange
+
+  SNSTopicArn:
+    Description: SNS Topic Arn
+    Value: !Ref rConfigRuleComplianceTopic

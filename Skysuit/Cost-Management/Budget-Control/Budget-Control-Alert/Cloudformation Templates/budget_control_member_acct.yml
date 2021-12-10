@@ -1,0 +1,151 @@
+#===============================================================================
+# Create sns topic,subscription,Notification policy,Lambda function to put event
+# Budget alert will send notification to sns topic which will trigger the lambda.
+#
+# (c) Enquizit, Inc 2019
+# v1.0 2020-07-15
+#================================================================================
+
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: Cloudformation Template for the member account for the budget control
+  solution
+
+
+###################################################
+#
+# Template Parameter Definitions
+#
+###################################################
+  
+Parameters:
+  ManagementAccount:
+    Type: String
+    AllowedPattern: ^\d{12}
+    Description: Management AWS Account ID for configuring the event bus ARN in the
+      member accounts
+    Default: '123456789012'
+
+###################################################
+#
+# Template Resource Definitions
+#
+###################################################
+
+Resources:
+
+  BudgetNotificationSnsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName:
+        Fn::Join:
+        - ''
+        - - budget-control-notification-topic
+          - Fn::Select:
+            - 2
+            - Fn::Split:
+              - /
+              - Ref: AWS::StackId
+  BudgetNotificationsnsTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      PolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: budgets.amazonaws.com
+          Action:
+          - SNS:Publish
+          Resource:
+            Ref: BudgetNotificationSnsTopic
+      Topics:
+      - Ref: BudgetNotificationSnsTopic
+  EventBridgeCrossAccountPublishPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Statement:
+        - Action:
+          - events:PutEvents
+          Effect: Allow
+          Resource:
+            Fn::Join:
+            - ''
+            - - 'arn:'
+              - Ref: AWS::Partition
+              - ':events:us-east-1:'
+              - Ref: ManagementAccount
+              - :event-bus/default
+        Version: '2012-10-17'
+      ManagedPolicyName: !Sub 'EventBridgeCrossAccountPublishPolicy-${AWS::StackName}'
+  BudgetControlSNSTarget:
+    Properties:
+      Code: '../Lambdas/budget_control_member_sns_handler.py'
+      Description: Python function to handle eventbridge rule for budget control
+      Environment:
+        Variables:
+          EVENT_BUS:
+            Fn::Join:
+            - ''
+            - - 'arn:'
+              - Ref: AWS::Partition
+              - ':events:us-east-1:'
+              - Ref: ManagementAccount
+              - :event-bus/default
+      Handler: budget_control_member_sns_handler.lambda_handler
+      MemorySize: 512
+      Role:
+        Fn::GetAtt:
+        - BudgetControlSNSTargetRole
+        - Arn
+      Runtime: python3.8
+      Timeout: 60
+    Type: AWS::Lambda::Function
+  BudgetControlSNSTargetRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action:
+          - sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+        Version: '2012-10-17'
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      - arn:aws:iam::aws:policy/AWSLambda_ReadOnlyAccess
+      - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+      - Ref: EventBridgeCrossAccountPublishPolicy
+    Type: AWS::IAM::Role
+  BudgetControlSNSTargetSNS1Permission:
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Ref: BudgetControlSNSTarget
+      Principal: sns.amazonaws.com
+      SourceArn:
+        Ref: BudgetNotificationSnsTopic
+    Type: AWS::Lambda::Permission
+  BudgetControlSNSTargetSNS1:
+    Properties:
+      Endpoint:
+        Fn::GetAtt:
+        - BudgetControlSNSTarget
+        - Arn
+      Protocol: lambda
+      TopicArn:
+        Ref: BudgetNotificationSnsTopic
+    Type: AWS::SNS::Subscription
+
+###################################################
+#
+# Template Output Definitions
+#
+###################################################
+
+Outputs:
+  BudgetNotificationSnsTopic:
+    Description: AWS SNS Topic for notification of AWS Budgets alerts
+    Value:
+      Ref: BudgetNotificationSnsTopic

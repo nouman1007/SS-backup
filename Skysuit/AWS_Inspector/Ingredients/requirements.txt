@@ -1,0 +1,70 @@
+http://docs.aws.amazon/solutions/latest/server-fleet-mangement-at-scale/overview.html
+
+
+aws inspector describe-assessment-templates --assessment-template-arns arn:aws:inspector:us-east-1:522955560990:target/0-Lio51BmZ/template/0-cxlIWLyd
+
+aws inspector describe-assessment-targets --assessment-target-arns arn:aws:inspector:us-east-1:522955560990:target/0-Lio51BmZ
+
+aws inspector describe-resource-groups --resource-group-arns arn:aws:inspector:us-east-1:522955560990:resourcegroup/0-ATtsoZOj
+
+aws inspector describe-assessment-runs --assessment-run-arns arn:aws:inspector:us-west-2:123456789012:target/0-0kFIPusq/template/0-4r1V2mAw/run/0-MKkpXXPE
+
+============================================================================================================================
+
+# reviewnotes: there is no handler for delete? is this intentinal. is there a roll back equivalent for crawler initialize?
+# reviewnotes: the only way to invoke an update is by giving a new crawler name. in that case what happens to the old crawler? does it not have to be stopped?
+
+
+
+
+aws cloudformation package --template-file inspector.yml --s3-bucket patch-lambda-code --output-template-file inspector_packaged.yml
+
+==============================================================================================================================
+
+ import cfnresponse
+          import json
+          import datetime
+          from json import JSONEncoder
+          from datetime import date
+          from dateutil.relativedelta import relativedelta
+ 
+          class DateTimeEncoder(JSONEncoder):
+              #Override the default method
+                  def default(self, obj):
+                      if isinstance(obj, (datetime.date, datetime.datetime)):
+                          return obj.isoformat()
+          def random_string():
+            deprecated_date = date.today() + relativedelta(months=+6)
+            return deprecated_date
+          def lambda_handler(event, context):
+            print(f"Data in event: {event}")
+            response_data = {}
+            if event["RequestType"] == "Create":
+              physicalResourceId = random_string()
+              physicalResourceId = json.dumps(physicalResourceId, indent=4, cls=DateTimeEncoder)
+              response_data = { "RandomString": physicalResourceId }
+            
+            else: # if event["RequestType"] == "Update" or event["RequestType"] == "Delete":
+              physicalResourceId = event["PhysicalResourceId"]
+            cfnresponse.send(event, context, cfnresponse.SUCCESS, response_data, physicalResourceId)
+
+================================================================================================================================
+
+[ERROR] Runtime.UserCodeSyntaxError: Syntax error in module 'index': invalid syntax (index.py, line 27)
+Traceback (most recent call last):
+  File "/var/task/index.py" Line 27
+        assess_temp_ arn = (event[Const.KEY_RESOURCE_PROPERTIES][Const.KEY_ASSESSMENT_TEMPLATE_ARN])                    #  Assessment Template Arn
+===============================================================================================================================
+arn:aws:inspector:us-east-1:522955560990:target/0-SeuaLeL4/template/0-ottq4xG3
+{'ServiceToken': 'arn:aws:lambda:us-east-1:522955560990:function:ins-test-rAssessmentTemplateRunFunction-6KNBKBJ6YO4E',
+ 'assessment_template_arn': 'arn:aws:inspector:us-east-1:522955560990:target/0-SeuaLeL4/template/0-ottq4xG3'}
+
+'assessment_template_arn': 'arn:aws:inspector:us-east-1:522955560990:target/0-fIAxFl0e/template/0-K3a8iTaL'
+
+================================================================================================================================
+'ResourceProperties': {'ServiceToken': 'arn:aws:lambda:us-east-1:522955560990:function:assessment-test-rAssessmentTemplateRunFunction-17EZAJ6VSRXV9', 'assessment_template_arn': 'arn:aws:inspector:us-east-1:522955560990:target/0-fIAxFl0e/template/0-K3a8iTaL'}}
+[DEBUG] 2020-11-05T12:17:08.786Z 71bffd2b-abac-4c77-809d-63b328e2bf9d {'RequestType': 'Create', 'ServiceToken': 'arn:aws:lambda:us-east-1:522955560990:function:assessment-test-rAssessmentTemplateRunFunction-17EZAJ6VSRXV9', 'ResponseURL': 'https://cloudformation-custom-resource-response-useast1.s3.amazonaws.com/arn%3Aaws%3Acloudformation%3Aus-east-1%3A522955560990%3Astack/assessment-test/c21f8860-1f60-11eb-99db-1298984999a5%7CrAssessmentTemplateRun%7C66c25f5e-5bd4-4b44-a7fe-380a6aa91446?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=20201105T121707Z&X-Amz-SignedHeaders=host&X-Amz-Expires=7200&X-Amz-Credential=AKIA6L7Q4OWT3SLPNLFO%2F20201105%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Signature=83722689ea2add007803b83bc7ccce8cbe3fad80b6e11900183625f20773916a', 'StackId': 'arn:aws:cloudformation:us-ea 'ResourceProperties': {'ServiceToken': 'arn:aws:lambda:us-east-1:522955560990:function:assessment-test-rAssessmentTemplateRunFunction-17EZAJ6VSRXV9', 'assessment_template_arn': 'arn:aws:inspector:us-east-1:522955560990:target/0-fIAxFl0e/template/0-K3a8iTaL'}}
+
+================================================================================================================================
+usage: enablesecurityhub.py [-h] --master_account 112520250899 --assume_role ManageSecurityHub  input_file home\nouman\aws-securityhub-multiaccount-scripts\ssm.csv
+pyhton3 enablesecurityhub.py [-h] --master_account 112520250899 --assume_role ManageSecurityHub  input_file "C:\Users\user\Desktop\Patch-Manager-security-hub\aws-securityhub-multiaccount-scripts\ssm.csv"

@@ -1,0 +1,133 @@
+#===============================================================================
+# Create S3 Bucket, ResourceDataSync and Put bucket policy.
+# scenario, this template must be run in Data collection account(Master Account).
+#
+# (c) Enquizit, Inc 2019
+# v1.0 2020-07-15
+#================================================================================
+AWSTemplateFormatVersion: '2010-09-09'
+Description: S3 Bucket Creation, Put Bucket Policy, Create SSM ResourceDataSync. 
+###################################################
+#
+# CloudFormation Interface Metadata
+#
+###################################################
+Metadata:
+
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: ResourceDataSync Information
+      Parameters:
+      - pResourceDataSyncBucketName
+      - pDataSourceAccountID
+      - pSyncType
+      - pBucketPrefix
+      - pBucketRegion
+      
+    ParameterLabels:
+      pResourceDataSyncBucketName:
+        default: Event ResourceDataSyncBucket Name
+      pDataSourceAccountID:
+        default: Data Source Account ID
+      pSyncName:
+        default: Sync Name
+      pSyncType:
+        default: Sync Type
+      pBucketRegion:
+        default: Bucket Region
+      pBucketPrefix:
+        default:  Bucket Prefix(folder name)
+      
+###################################################
+#
+# Template Parameter Definitions
+#
+###################################################
+Parameters: 
+    
+  pResourceDataSyncBucketName:
+    Type: String
+    Default: ResourceDataSyncBucket
+    Description: Enter Name of Resource Data Sync Bucket(Lower Case).
+    
+  pDataSourceAccountID:
+    Type: Number
+    Default: 522955560990
+    Description: Enter Name of Data Source Account ID.
+    
+  pSyncName:
+    Type: String
+    Default: data-sync
+    Description: Enter Sync Name.
+    
+  pSyncType:
+    Type: String
+    Default: SyncToDestination
+    Description: Enter Sync Type SyncFromSource(from AWS Organizations or from multiple AWS Regions), SyncToDestination(data to an S3 bucket) is Default.
+
+  pBucketRegion:
+    Type: String
+    Default: us-east-1
+    Description: Enter Bucket Region, us-east-1 is Default.
+
+  pBucketPrefix:
+    Type: String
+    Default: shared-account
+    Description: Enter Bucket Prefix(folder name), shared-account is Default.
+  
+AWSTemplateFormatVersion: 2010-09-09
+Description: S3 bucket with default encryption
+Resources:
+  rResourceDataSyncBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${pResourceDataSyncBucketName}-${AWS::Region}-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+              # KMSMasterKeyID: KMS-KEY-ARN
+    DeletionPolicy: Delete
+         
+
+  rBucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket:
+        Ref: rResourceDataSyncBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Sid: SSMBucketPermissionsCheck
+          Effect: Allow
+          Principal:
+            Service: ssm.amazonaws.com
+          Action: s3:GetBucketAcl
+          Resource: !Sub 'arn:aws:s3:::${pResourceDataSyncBucketName}-${AWS::Region}-${AWS::AccountId}'
+        - Sid: " SSMBucketDelivery"
+          Effect: Allow
+          Principal:
+            Service: ssm.amazonaws.com
+          Action: s3:PutObject
+          Resource:
+          # - arn:aws:s3:::resourcedatasyncbucket-us-east-1-112520250899/*/accountid=112520250899/*
+          - !Sub 'arn:aws:s3:::${pResourceDataSyncBucketName}-${AWS::Region}-${AWS::AccountId}/*/accountid=${AWS::AccountId}/*'
+          # - arn:aws:s3:::resourcedatasyncbucket-us-east-1-112520250899/*/accountid=522955560990/*
+          - !Sub 'arn:aws:s3:::${pResourceDataSyncBucketName}-${AWS::Region}-${AWS::AccountId}/*/accountid=${pDataSourceAccountID}'
+          Condition:
+            StringEquals:
+              s3:x-amz-acl: bucket-owner-full-control
+              
+  rBasicResourceDataSync:
+    Type: AWS::SSM::ResourceDataSync
+    DependsOn: rBucketPolicy
+    Properties:
+      SyncName: !Ref pSyncName
+      SyncType: !Ref pSyncType
+      S3Destination:
+        BucketName: !Sub '${pResourceDataSyncBucketName}-${AWS::Region}-${AWS::AccountId}'
+        BucketRegion: !Ref pBucketRegion
+        SyncFormat: JsonSerDe
+        BucketPrefix: !Ref pBucketRegion
+        # KMSKeyArn: kmsKeyARN

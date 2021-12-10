@@ -1,0 +1,73 @@
+#===============================================================================
+# Create EC2 Role for SSM.
+#
+# (c) Enquizit, Inc 2019
+# v1.0 2020-07-15
+#================================================================================
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Create IAM Role for SSM & EC2 Instance Profile.
+###################################################
+#
+# CloudFormation Interface Metadata
+#
+###################################################
+Metadata:
+
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: IAM Role Information
+      Parameters:
+      - pEC2RoleforSSMName
+
+    ParameterLabels:
+      pEC2RoleforSSMName: 
+        default: EC2 Role for SSM Name
+        
+###################################################
+#
+# Template Parameter Definitions
+#
+###################################################
+Parameters: 
+
+  pEC2RoleforSSMName: 
+    Type: String
+    Default: EC2RoleforSSM
+    Description: Enter the Name of EC2 Role for SSM
+    
+    
+ ###################################################
+#
+# Resource definitions
+#
+###################################################
+Resources:
+      
+   # SSM registeration  Role  
+  rEC2RoleforSSM:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref pEC2RoleforSSMName
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - "ec2.amazonaws.com"
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+        
+  RootInstanceProfile: 
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      InstanceProfileName: !Ref pEC2RoleforSSMName  
+      Path: "/"
+      Roles: 
+        - 
+          Ref: "rEC2RoleforSSM"

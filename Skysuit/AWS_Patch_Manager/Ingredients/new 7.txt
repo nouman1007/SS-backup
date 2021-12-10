@@ -1,0 +1,17 @@
+	Email								Account ID
+
+skybase-master@enquizit.com				112520250899
+skybase-shared@enquizit.com				522955560990
+
+-----------------------------------------------------------------------------------
+
+SsmSecurityHub
+
+-----------------------------------------------------------------------------------
+
+python3 enablesecurityhub.py  --master_account 112520250899 --assume_role ManageSecurityHub ssm.csv
+						  
+------------------------------------------------------------------------------------
+Import-From-SSM-To-Security-Hub		arn:aws:iam::522955560990:role/Import-From-SSM-To-Security-Hub
+security-hub-lambda-code
+SSMExportFromSecHub.zip

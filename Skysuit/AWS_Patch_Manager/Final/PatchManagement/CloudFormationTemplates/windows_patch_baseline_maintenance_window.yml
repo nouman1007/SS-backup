@@ -1,0 +1,498 @@
+#===============================================================================
+# Create Windows Patch baseline, Maintenance WINDOWS, targets, SNSTopic.
+#
+# (c) Enquizit, Inc 2019
+# v1.0 2020-07-15
+#================================================================================
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: PatchBaseline, MaintenanceWindow & MaintenanceWindowTarget 
+###################################################
+#
+# CloudFormation Interface Metadata
+#
+###################################################
+Metadata:
+
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Patch Baseline Information
+      Parameters:
+      - pOrganization
+      - pPatchBaselineName
+      - pPatchGroups
+      - pApproveAfterDays
+      
+    - Label:
+        default: Approval Rules
+      Parameters:
+      - pProduct
+      - pClassification
+      - pSeverity
+      - pComplianceLevel
+      
+    - Label:
+        default: Maintenance Window
+      Parameters:
+      - pMaintenanceWindowName
+      - pAllowUnassociatedTargets
+      - pCutoff
+      - pDuration
+      - pSchedule
+      - pScheduleTimezone
+      - pNotificationEmailAddress
+
+    - Label:
+        default: Maintenance Window Targets
+      Parameters:
+      - pMaintenanceWindowTargetName
+      - pResourceType
+      - pTargetsKey
+      - pTargetsValue
+      - pOwnerInformation
+      
+    - Label:
+        default: Maintenance Window Tasks
+      Parameters:
+      - pMaxConcurrency
+      - pMaxErrors
+      - pPriority
+      - pTaskType
+      - pTaskArn
+      
+    ParameterLabels:
+      pOrganization:
+        default: Organization Name
+      pPatchBaselineName:
+        default: PatchBaseline Name
+      pPatchGroups:
+        default: Patch Groups
+      pProduct:
+        default: PRODUCT
+      pClassification:
+        default: Classification
+      pSeverity:
+        default: Severity
+      pComplianceLevel:
+        default:  Compliance reporting
+      pApproveAfterDays:
+        default: Approve After Days
+      pAllowUnassociatedTargets:
+        default: Allow Unassociated Targets
+      pCutoff:
+        default: Cutoff
+      pDuration:
+       default: Duration
+      pMaintenanceWindowName:
+        default: Name
+      pSchedule:
+        default: Schedule
+      pScheduleTimezone:
+        default: Schedule Timezone
+      pResourceType:
+        default: Resource Type
+      pTargetsKey:
+        default:   Targets Key
+      pTargetsValue:
+        default: Targets Value
+      pOwnerInformation:
+        default: OwnerInformation
+      pMaintenanceWindowTargetName:
+        default: Maintenance WindowName 
+      pMaxConcurrency:
+       default: MaxConcurrency
+      pMaxErrors:
+        default: MaxErrors
+      pPriority:
+        default: Priority
+      pTaskType:
+        default: TaskType
+      pTaskArn:
+        default: TaskArn
+      pNotificationEmailAddress:
+        default: Email
+
+               
+###################################################
+#
+# Template Parameter Definitions
+#
+###################################################
+Parameters: 
+
+  pOrganization:
+    Type: String
+    Default: Enquizit
+    
+  pPatchBaselineName:
+    Type: String
+    Default: myPatchBaseline
+    Description: Enter Name of Patch Baseline.
+
+  pPatchGroups:
+    Type: String
+    MinLength: 1
+    MaxLength: 256  
+    Default: Production
+    Description: Enter the name of the patch group that should be registered with the patch baseline.
+    
+  pApproveAfterDays:
+    Type: Number
+    MinValue: 0
+    MaxValue: 100  
+    Default: 7
+    Description: Enter The number of days after the release date of each patch matched by the rule that the patch is marked as approved in the patch baseline.
+    
+  pProduct:
+    Type: String
+    Default: WindowsServer2019
+    AllowedValues:
+      - Windows10
+      - Windows10LTSB
+      - Windows8 
+      - Windows8.1
+      - Windows8Embedded
+      - WindowsServer2008
+      - WindowsServer2008R2
+      - WindowsServer2012
+      - WindowsServer2012R2
+      - WindowsServer2016
+      - WindowsServer2019
+      - MicrosoftDefenderAntivirus
+    Description: Enter Windows8,Windows8.1, Windows8Embedded, WindowsServer2008, WindowsServer2008R2, WindowsServer2012, WindowsServer2012R2, WindowsServer2016,  MicrosoftDefenderAntivirus or Default is WindowsServer2019.
+
+  pClassification:
+    Type: String
+    Default: CriticalUpdates
+    AllowedValues: 
+      - CriticalUpdates
+      - DefinitionUpdates
+      - Drivers
+      - FeaturePacks
+      - SecurityUpdates
+      - ServicePacks
+      - Tools
+      - UpdateRollups
+      - Updates
+      - Upgrades
+    Description: Enter Classification. Default is CriticalUpdates.
+  
+  pSeverity:
+    Type: String
+    Default: Critical
+    AllowedValues: 
+      - Critical
+      - Important
+      - Moderate
+      - Low
+      - Unspecified
+    Description: Enter Severity, Default is Critical.
+    
+  pComplianceLevel:
+    Type: String
+    Default: CRITICAL
+    AllowedValues: 
+      - CRITICAL
+      - HIGH
+      - INFORMATIONAL
+      - MEDIUM
+      - LOW
+      - UNSPECIFIED
+    Description: Enter Compliance, Default is Critical.
+    
+  pAllowUnassociatedTargets:
+    Type: String
+    Default: false
+    AllowedValues: 
+      - true
+      - false
+    Description: Enter AllowUnassociatedTargets, Default is false.
+    
+  pCutoff:
+    Type: Number
+    MinValue: 0
+    MaxValue: 23  
+    Default: 1
+    Description: The number of hours before the end of the maintenance window that Systems Manager stops scheduling new tasks for execution.
+    
+  pDuration:
+    Type: Number
+    MinValue: 1
+    MaxValue: 24  
+    Default: 2
+    Description: The duration of the maintenance window in hours.
+    
+  pMaintenanceWindowName:
+    Type: String
+    Default: OSMaintenanceWindow
+    Description: Enter Name of Maintenance Window.
+    
+  pSchedule:
+    Type: String
+    MinLength: 1
+    MaxLength: 256 
+    Default: cron(0 4 ? * * *)
+    Description: The schedule of the maintenance window in the form of a cron.
+    
+  pScheduleTimezone:
+    Type: String
+    Default: US/Eastern
+    Description: The time zone that the scheduled maintenance window executions are based on, in Internet Assigned Numbers Authority (IANA) format.
+
+  pTargetsKey:
+    Type: String
+    Default: tag:Patch Group
+    Description: User-defined criteria for sending commands that target instances that meet the criteria. i.e. tag:ServerRole.
+    
+  pTargetsValue:
+    Type: String
+    Default: Production
+    Description: User-defined criteria that maps to Key. i.e. WebServer.
+    
+  pOwnerInformation:
+    Type: String
+    Default: SSM Patch manager
+    Description: A user-provided value that will be included in any CloudWatch events that are raised while running tasks for these targets in this maintenance window.
+
+  pMaintenanceWindowTargetName:
+    Type: String
+    Default: SSMPatchManager
+    Description: The name for the maintenance window target.
+    
+  pMaxConcurrency:
+    Type: String
+    MinLength: 1
+    MaxLength: 7
+    Default: 1
+    Description: The maximum number of targets this task can be run for, in parallel (From 1 to 7).
+    
+  pMaxErrors:
+    Type: String
+    MinLength: 1
+    MaxLength: 7
+    Default: 1
+    Description: The maximum number of errors allowed before this task stops being scheduled (From 1 to 7).
+  
+  pPriority:
+    Type: Number
+    MinValue: 0
+    Default: 0
+    Description: The priority of the task in the maintenance window. The lower the number, the higher the priority. Tasks that have the same priority are scheduled in parallel.
+  
+  pTaskType:
+    Type: String
+    Default: RUN_COMMAND
+    AllowedValues:
+      - AUTOMATION
+      - LAMBDA
+      - RUN_COMMAND 
+      - STEP_FUNCTIONS
+    Description: The type of task. Valid values are RUN_COMMAND, AUTOMATION, LAMBDA, STEP_FUNCTIONS.
+    
+  pTaskArn:
+    Type: String
+    Default: AWS-RunPatchBaseline
+    Description: The resource that the task uses during execution.( a. For RUN_COMMAND and AUTOMATION task types, TaskArn is the SSM document name or Amazon Resource Name (ARN), b.For LAMBDA tasks, TaskArn is the function name or ARN. c.For STEP_FUNCTIONS tasks, TaskArn is the state machine ARN.)
+
+  pNotificationEmailAddress:
+    Type: String
+ 
+ 
+###################################################
+#
+# Resource definitions
+#
+###################################################
+
+Resources:
+
+  #==================================================
+  # Define the Patch Baselines
+  #==================================================
+
+  CustomPatchBaseline:
+    Type: AWS::SSM::PatchBaseline
+    Properties:
+      Name: 
+        Ref: pPatchBaselineName
+      Description: Baseline containing all updates approved for instances
+      OperatingSystem: 'WINDOWS'
+      PatchGroups:
+      - Ref : pPatchGroups
+      ApprovalRules:
+        PatchRules:
+        - PatchFilterGroup:
+            PatchFilters:
+            - Key: MSRC_SEVERITY
+              Values:
+                - Ref: pSeverity
+            - Key: PRODUCT
+              Values:
+               - Ref: pProduct
+            - Key: CLASSIFICATION
+              Values:
+               - Ref: pClassification
+          ApproveAfterDays:
+            Ref : pApproveAfterDays
+          ComplianceLevel: 
+            Ref: pComplianceLevel
+            
+  #==================================================
+  # Define the maintenance windows when patches
+  # will be applied
+  #==================================================
+          
+  MaintenanceWindow:
+    Type: AWS::SSM::MaintenanceWindow
+    Properties:
+      AllowUnassociatedTargets: 
+        Ref: pAllowUnassociatedTargets
+      Cutoff: 
+        Ref: pCutoff
+      Description: Maintenance Window to update SSM Agent
+      Duration: 
+        Ref: pDuration
+      Name: 
+        Ref: pMaintenanceWindowName
+      Schedule:
+        Ref: pSchedule
+      ScheduleTimezone: 
+        Ref: pScheduleTimezone
+        
+  #==================================================
+  # The target(s) defines the managed instances for
+  # the maintenance windows
+  #==================================================
+
+  MaintenanceWindowTarget:
+    Type: AWS::SSM::MaintenanceWindowTarget
+    Properties:
+      WindowId:
+        Ref: MaintenanceWindow
+      ResourceType: INSTANCE
+      Targets:
+      - Key: 
+          Ref: pTargetsKey
+        Values:
+        - Ref: pTargetsValue
+      OwnerInformation: 
+        Ref: pOwnerInformation
+      Name: 
+        Ref: pMaintenanceWindowTargetName
+      Description: A target for demonstrating maintenance windows and step functions
+    DependsOn: MaintenanceWindow
+    
+  #=====================================================
+  # SSM will use this role during the maintenance window
+  #=====================================================
+  
+  MaintenanceWindowServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join [ "", [ !Ref pOrganization, PatchingRole]]
+      Description: !Join [" ", [Role to perform regular patching, !Ref pOrganization]]
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ssm.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonSSMMaintenanceWindowRole
+      Policies:
+        - PolicyName: PassRole
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - '*'
+
+  #==================================================
+  # SSM will use this role for SNS Notification
+  #==================================================
+  SNSServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join [ "", [ !Ref pOrganization, SNSRole]]
+      Description: !Join [" ", [Role to send notifications during patching for, !Ref pOrganization]]
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ssm.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSNSFullAccess
+      Policies:
+        - PolicyName: PassRole
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - '*'
+
+  #==================================================
+  # SNS Topic to use for email notifications
+  #==================================================
+  PatchNotificationSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+        Subscription:
+            - Endpoint: !Ref pNotificationEmailAddress
+              Protocol: email
+
+  #==================================================
+  # Create patching tasks for the maintenance windows
+  #==================================================
+
+  PatchTask:
+    Type: AWS::SSM::MaintenanceWindowTask
+    Properties:
+      Description: Apply OS patches on instances in target
+      ServiceRoleArn: !GetAtt MaintenanceWindowServiceRole.Arn
+      MaxConcurrency: 
+        Ref: pMaxConcurrency
+      MaxErrors: 
+        Ref: pMaxErrors
+      Priority: 
+        Ref: pPriority
+      TaskType: 
+        Ref: pTaskType
+      WindowId:
+        Ref: MaintenanceWindow
+      TaskArn: 
+        Ref: pTaskArn
+      TaskInvocationParameters:
+        MaintenanceWindowRunCommandParameters:
+          Comment: Runs patch baseline
+          TimeoutSeconds: 600
+          Parameters: {"Operation":["Install"]}
+          ServiceRoleArn: !GetAtt SNSServiceRole.Arn
+          NotificationConfig:
+            NotificationArn: !Ref PatchNotificationSNSTopic
+            NotificationEvents:
+                - All
+            NotificationType: Invocation
+      Targets:
+        - Key: WindowTargetIds
+          Values:
+            - Ref: MaintenanceWindowTarget
+    
+
+
+   

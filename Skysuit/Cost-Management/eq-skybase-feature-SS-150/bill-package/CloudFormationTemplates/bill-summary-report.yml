@@ -1,0 +1,201 @@
+# Lambda function and Cloud Watch event for Bill Summary Report for every account in an Organization
+# (c) Enquizit, Inc 2020
+# v1.1 2021-03-02
+
+AWSTemplateFormatVersion: 2010-09-09
+Description: CloudFormation template to create a lambda function and a Cloud Watch event rule to create a Bill Summary Report for each account in an organization
+
+###################################################
+#
+# CloudFormation Interface Metadata
+#
+###################################################
+
+Metadata:
+
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Lambda Code
+        Parameters:
+          - pBucketName
+          - pLamdaSourceFileBillReport
+          - pSSMParamPrefix
+          - pReportSchedule
+          - pNotificationEmailAddress
+
+    ParameterLabels:
+      pBucketName:
+        default: Lambda Source Bucket
+      pLamdaSourceFileBillReport:
+        default: Lambda Source File to send email through SES
+      pSSMParamPrefix:
+        default: Parameter Store Prefix
+      pReportSchedule:
+        default: Report Schedule
+      pNotificationEmailAddress:
+        default: Notification Email Address
+
+###################################################
+#
+# Template Parameter Definitions
+#
+###################################################
+
+Parameters:
+
+  pSSMParamPrefix:
+    Description: SSM Parameter prefix defined in Systems Manager -> Paramater Store. Make sure for each account, a parameter is created in this format - /acme/billing/contact/{account number}.
+    Type: String
+    Default: /acme/billing/contact/
+
+  pBucketName:
+    Description: Name of the s3 bucket where the lambda functions are stored.
+    Type: String
+    Default: bill-summary-bucket
+
+  pLamdaSourceFileBillReport:
+    Description: Name of zip file containing lambda code. Note that this bucket must be in the same region where the stack is created.
+    Type: String
+    Default: bill-summary-report.zip
+
+  pReportSchedule:
+    Description:  Cron schedule defining when bill summary will generate report. Runs every 3rd day of the month. Format is cron(min hr month * ? *).  Time is UTC.
+    Type: String
+    Default: cron(0 9 3 * ? *)
+
+  pNotificationEmailAddress:
+    Description: Notification email address for SNS Topic. If there is an error in the lambda function, a CloudWatch Alarm is created and sends it to SNS.
+    Type: String
+    
+    
+###################################################
+#
+# Template Resource Definitions
+#
+###################################################
+
+Resources:
+
+  # Lambda function will generate a monthly billing report for each account in an organization
+  rBillSummaryFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: bill-summary-for-accounts
+      Description: This function generates bill summary report for all the accounts in an organization.
+      Handler: bill_summary_lambda.lambda_handler
+      Environment:
+        Variables:
+          ssm_param_prefix: !Ref pSSMParamPrefix
+      MemorySize: 2048
+      Role: !GetAtt rLambdaRole.Arn
+      Runtime: python3.8
+      Timeout: 300
+      Code:
+        S3Bucket: !Ref pBucketName
+        S3Key: !Ref pLamdaSourceFileBillReport
+
+  # Create the CloudWatch event rule to run every month
+  rReportScheduler:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: Bill-Summary-ReportScheduler
+      Description: Trigger a Lambda function to run a bill summary report every month.
+      ScheduleExpression: !Ref pReportSchedule
+      State: ENABLED
+      Targets:
+      - 
+        Arn: !GetAtt rBillSummaryFunction.Arn
+        Id: ReportTarget
+
+  # This permission allows CW to trigger the Lambda function.
+  rSecurityEventTriggerPolicy:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref rBillSummaryFunction
+      Principal: events.amazonaws.com
+      Action: lambda:InvokeFunction
+      SourceArn: !GetAtt rReportScheduler.Arn
+
+  # Create the role.  Allow Lambda to get cost explorer,
+  # ssm, organizations data and send email through SES
+  rLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: bill-summary-policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              Effect: Allow
+              Action:
+              - ce:GetCostAndUsage
+              - ses:SendEmail
+              - ssm:GetParameter
+              - organizations:Describe*
+              - organizations:List*
+              Resource:
+              - "*"
+  
+  # SNS Topic for failure check
+  rLambdaFailureCheckSNS:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "Lambda-Failure-Check-${rBillSummaryFunction}"
+      Subscription:
+        - Protocol: Email
+          Endpoint: !Ref pNotificationEmailAddress
+
+  # Creating an Alarm if there is an error in the lambda function
+  rErrorsAlarmCreatorTag:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "Lambda-Invocation-Error-${rBillSummaryFunction}"
+      AlarmDescription: Trigger an alarm if an error is recorded
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Dimensions:
+        -
+          Name: FunctionName
+          Value: !Ref rBillSummaryFunction
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 5
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - Ref: rLambdaFailureCheckSNS
+      InsufficientDataActions:
+        - Ref: rLambdaFailureCheckSNS     
+
+###################################################
+#
+# Template Outputs
+#
+###################################################
+
+Outputs:
+
+  oCloudWatchEventRule:
+    Description: Cloud Watch event rule name
+    Value: !Ref rReportScheduler
+
+  oLambdaArn:
+    Description: Lambda ARN
+    Value: !GetAtt rBillSummaryFunction.Arn
+
+  oSNSTopicArn:
+    Description: SNS Topic Arn
+    Value: !Ref rLambdaFailureCheckSNS

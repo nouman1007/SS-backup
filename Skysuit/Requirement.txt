@@ -1,0 +1,153 @@
+
+
+ami-0412e100c0177fb4b
+vol-0f5fe68f7e08c4e4e
+
+snap-0888171cbc90c6775
+
+vol-09120eb6e87a8cf00 -------Detach
+
+
+
+
+ami-02e136e904f3da870
+snap-00304f25c544e333e -------------> 
+
+
+
+
+
+vol-01782b1c82ca70dc1 ------------> volumeID ------- test Instance
+/dev/sda1
+========================
+
+. email(when it will be stoped)
+noncompliant stop on desire base (stoped and email)
+
+
+cloud trail (for instance owner).
+
+
+
+Order #240146
+configure aws config aggrigator should see cross account compliant and noncompliant resource.
+send an email to the admin after 60 days of resource(EC2 instance) become noncompliant.
+stop the EC2 instances after 90 days days of resource(EC2 instance) become noncompliant.
+
+====================================================Error=====================================================
+
+AWS Config does not have permission from the source account to replicate data into an aggregator account. Authorize aggregator account to replicate data from source accounts and region.
+==================================================aws config conformace=======================================
+
+Prerequisites
+=============
+To start recording
+you must create appropriate resources such as automation assume role and other AWS resources based on your remediation target.
+*Note:-  AWS Config does not support AWS CloudFormation intrinsic functions for the automation execution role.
+
+
+================================================================================================================================
+APPROVED_AMIS_BY_ID
+approved-amis-by-id
+================================================================================================================================
+arn:aws:lambda:us-east-1:522955560990:function:config-test
+
+
+=================================================================================================================================
+
+          {
+             "version": "0",
+             "id": "cd4d811e-ab12-322b-8255-872ce65b1bc8",
+             "detail-type": "event type",
+             "source": "aws.config",
+             "account": "111122223333",
+             "time": "2018-03-22T00:38:11Z",
+             "region": "us-east-1",
+             "resources": [resources],
+             "detail": {specific message type}
+          }  
+        
+=================================================================================================================================
+{  
+   "description":"Test Execute Lambda Function.",
+   "schemaVersion":"0.3",
+   "assumeRole":"MYARN",
+   "parameters":{},
+   "mainSteps":[  
+        {
+            "name": "invokeMyLambdaFunction",
+            "action": "aws:invokeLambdaFunction",
+            "maxAttempts": 3,
+            "timeoutSeconds": 120,
+            "onFailure": "Abort",
+            "inputs": {
+                "FunctionName": "MyLambdaFunction",
+                "Payload": "TESTER"
+
+            }
+        }
+   ]
+}
+====================================================================================================================		
+
+
+03345069789
+03344037477
+35202-3530870-5
+====================================================================================================================
+
+{ 
+    "invokingEvent": "{\"configurationItem\":{\"configurationItemCaptureTime\":\"2016-02-17T01:36:34.043Z\",\"awsAccountId\":\"123456789012\",\"configurationItemStatus\":\"OK\",\"resourceId\":\"i-00000000\",\"ARN\":\"arn:aws:ec2:us-east-2:123456789012:instance/i-00000000\",\"awsRegion\":\"us-east-2\",\"availabilityZone\":\"us-east-2a\",\"resourceType\":\"AWS::EC2::Instance\",\"tags\":{\"Foo\":\"Bar\"},\"relationships\":[{\"resourceId\":\"eipalloc-00000000\",\"resourceType\":\"AWS::EC2::EIP\",\"name\":\"Is attached to ElasticIp\"}],\"configuration\":{\"foo\":\"bar\"}},\"messageType\":\"ConfigurationItemChangeNotification\"}",
+    "ruleParameters": "{\"myParameterKey\":\"myParameterValue\"}",
+    "resultToken": "myResultToken",
+    "eventLeftScope": false,
+    "executionRoleArn": "arn:aws:iam::123456789012:role/config-role",
+    "configRuleArn": "arn:aws:config:us-east-2:123456789012:config-rule/config-rule-0123456",
+    "configRuleName": "change-triggered-config-rule",
+    "configRuleId": "config-rule-0123456",
+    "accountId": "123456789012",
+    "version": "1.0"
+}
+====================================================================================================================
+
+{
+  "source": ["aws.config"],
+  "detail-type": ["Config Rules Compliance Change"],
+  "detail": {
+    "messageType": ["ComplianceChangeNotification"],
+    "configRuleName": ["approved-amis-by-id"]
+  }
+}
+====================================================================================================================
+{
+  "source": ["aws.config"],
+  "detail": {
+    "requestParameters":{
+	  "evaluations":{
+	    "Compliance Type":["NON_COMPLIANT"]
+		}
+		},
+	 "AdditionalEventData":{
+	   "ManagedRuleIdentifier":["APPROVED_AMIS_BY_ID"]
+  }
+  }
+ }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

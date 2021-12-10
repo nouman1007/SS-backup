@@ -1,0 +1,239 @@
+#===============================================================================
+# Create S3 Bucket, Put bucket policy, Export CloudWatch Logs in this Bucket
+# through lambda function and CloudWatch rule to trigger lambda everyday.
+#
+# (c) Enquizit, Inc 2019
+# v1.0 2020-07-15
+#================================================================================
+AWSTemplateFormatVersion: '2010-09-09'
+Description: S3 Bucket Creation, Put Bucket Policy, Export cloudwatch logs to that Bucket, cloudwatch Rule. 
+###################################################
+#
+# CloudFormation Interface Metadata
+#
+###################################################
+Metadata:
+
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Cloudwatch Logs & Destination Bucket Information
+      Parameters:
+      - pCloudwatchLogsBucketName
+      - pTargetId
+      - pSnsTopicName
+      - pOwnerEmail
+      - pNumberOfDaysToMoveToSTANDARDIA
+      - pNumberOfDaysToMoveToONEZONEIA
+      - pNumberOfDaysToMoveToGlacier
+      - pNumberOfDaysToMoveToDEEPARCHIVE
+      - pTimePeriodForLambda
+      
+      
+    ParameterLabels:
+      pCloudwatchLogsBucketName:
+        default: Destination Bucket Name
+      pTargetId:
+        default: Name for the target ID to cloudwatch rule.
+      pSnsTopicName:
+        default: Name for the SNS Topic for Email.
+      pOwnerEmail:
+        default: An Email Address for export logs Notification.
+      pNumberOfDaysToMoveToSTANDARDIA:
+        default: After the Number Of Days To Move To STANDARD IA.
+      pNumberOfDaysToMoveToONEZONEIA:
+        default: After the Number Of Days To Move To ONEZONE IA.
+      pNumberOfDaysToMoveToGlacier:
+        default: After the Number Of Days To Move To Glacier.
+      pNumberOfDaysToMoveToDEEPARCHIVE:
+        default: After the Number Of Days To Move To DEEP ARCHIVE.
+      pTimePeriodForLambda:  
+        default: Time Period For Lambda to Triggered.
+
+     
+      
+###################################################
+#
+# Template Parameter Definitions
+#
+###################################################
+Parameters: 
+    
+  pCloudwatchLogsBucketName:
+    Type: String
+    Default: cloudwatchlogsbucket
+    Description: Enter Name of Cloudwatch Logs Bucket(Lower Case).
+    
+  pTargetId:
+    Type: String
+    Default: "cw-lg-expt-Func"
+    Description: A name for the target. Use a string that will help you identify the target. Each target associated with a rule must have an Id unique for that rule.
+    
+  pSnsTopicName:
+    Type: String
+    Default: "ext-to-s3-bkt"
+    Description: A name for sns topic.
+    
+  pOwnerEmail:
+    Type: String
+    Default: "nshafiq@enquizit.com"
+    Description: An Email Address for export logs Notification.
+    
+  pTimePeriodForLambda:
+    Description:  The time period (in hours) Lambda function will go to Cloudwatch  and copy Logs to AWS S3 bucket. For example, if we set this to 24 hours, the logs will be copied once in a day
+    Type: Number
+    Default: 24
+  pNumberOfDaysToMoveToSTANDARDIA:
+    Type: Number
+    Default: 365
+    Description: Enter number of days tp move the S3  Bucket into AWS STANDARD_IA  
+  pNumberOfDaysToMoveToONEZONEIA:
+    Type: Number
+    Default: 730
+    Description: Enter number of days tp move the S3  Bucket into AWS ONEZONE_IA
+    
+  pNumberOfDaysToMoveToGlacier:
+    Type: Number
+    Default: 1095
+    Description: Enter number of days tp move the S3 Bucket into AWS Glacier 
+  pNumberOfDaysToMoveToDEEPARCHIVE:
+    Type: Number
+    Default: 1460
+    Description: Enter number of days tp move the S3  Bucket into AWS  DEEP_ARCHIVE
+
+    
+
+###################################################
+#
+# Template Resource Definitions
+#
+###################################################
+  
+Resources:
+
+ #Create s3 bucket for cloudwatch logs backup
+  rCloudwatchLogsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${pCloudwatchLogsBucketName}-${AWS::AccountId}-${AWS::Region}'
+      AccessControl: Private 
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256     
+      LifecycleConfiguration:
+        Rules:
+          - Id: test
+            Prefix: test
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: !Ref pNumberOfDaysToMoveToSTANDARDIA
+                StorageClass: STANDARD_IA      
+              - TransitionInDays: !Ref pNumberOfDaysToMoveToONEZONEIA
+                StorageClass: ONEZONE_IA
+              - TransitionInDays: !Ref pNumberOfDaysToMoveToGlacier
+                StorageClass: Glacier 
+              - TransitionInDays: !Ref pNumberOfDaysToMoveToDEEPARCHIVE
+                StorageClass: DEEP_ARCHIVE
+    DeletionPolicy: Retain
+
+ #Put bucket policy for to give s3 permissions
+  rBucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket:
+        Ref: rCloudwatchLogsBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Sid: ExportCloudwatchLogs
+          Effect: Allow
+          Principal:
+            Service: logs.amazonaws.com
+          Action: s3:GetBucketAcl
+          Resource: !Sub 'arn:aws:s3:::${pCloudwatchLogsBucketName}-${AWS::AccountId}-${AWS::Region}'
+        - Sid: ExportingCloudwatchLogs
+          Effect: Allow
+          Principal:
+            Service: logs.amazonaws.com
+          Action: s3:PutObject
+          Resource:
+          - !Sub 'arn:aws:s3:::${pCloudwatchLogsBucketName}-${AWS::AccountId}-${AWS::Region}/*'
+          Condition:
+            StringEquals:
+              s3:x-amz-acl: bucket-owner-full-control
+        - Sid: DenyDelete
+          Effect: Deny
+          Principal: "*"       
+          Action: s3:DeleteObject
+          Resource: !Sub ${rCloudwatchLogsBucket.Arn}/*              
+
+              
+  # Custom lambda that Export the cloudwatch Logs into the S3 Bucket
+  rAWSCloudWatchLogExportFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: rBucketPolicy
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt rLambdaExRole.Arn
+      Code: '../Lambda/cloudwtch_logs_exporting_s3_bucket'
+      Runtime: python3.7
+      Timeout: 240
+      Environment:
+        Variables:
+          Dest_Bucket_Name: !Sub '${pCloudwatchLogsBucketName}-${AWS::AccountId}-${AWS::Region}'
+          topic_name: !Ref pSnsTopicName
+          Email: !Ref pOwnerEmail
+      
+ # Lambda execution Role
+  rLambdaExRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: AWSCloudwatchLogsExporterPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:  
+              - Effect: Allow
+                Action:
+                  - 'logs:*'
+                  - 's3:*'
+                  - 'sns:*'
+                Resource: '*'
+            
+ 
+  # cloudwatch Rule to trigger the lambda function    
+  rScheduledRuleForLambdaFunc: 
+    Type: AWS::Events::Rule
+    DependsOn: rAWSCloudWatchLogExportFunction
+    Properties: 
+      Description: "Scheduled Rule for export cloudwatch logs to s3 Bucket"
+      ScheduleExpression: !Sub 'rate(${pTimePeriodForLambda} hours)'
+      State: ENABLED
+      Targets: 
+        - 
+          Arn: !GetAtt rAWSCloudWatchLogExportFunction.Arn
+          Id: 
+            Ref: pTargetId
+            
+  # Permission for events to invoke lambda function       
+  rPermissionForEventsToInvokeLambda: 
+    Type: AWS::Lambda::Permission
+    DependsOn: rAWSCloudWatchLogExportFunction
+    Properties: 
+      FunctionName: !Ref rAWSCloudWatchLogExportFunction
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: !GetAtt rScheduledRuleForLambdaFunc.Arn

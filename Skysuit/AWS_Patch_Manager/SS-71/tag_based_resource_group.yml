@@ -1,0 +1,83 @@
+#===============================================================================
+# Create Tag base Resource Group for EC2 instances.
+# 
+#
+# (c) Enquizit, Inc 2019
+# v1.0 2020-07-15
+#================================================================================
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Tag base Resource Group for EC2 instances. 
+
+###################################################
+#
+# CloudFormation Interface Metadata
+#
+###################################################
+Metadata:
+
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Resource Group Information
+      Parameters:
+      - pResourceGroupName
+      - pInstanceTagKey
+      - pInstanceTagValue
+      
+    ParameterLabels:
+     pResourceGroupName:
+        default: Resource Group Name
+     pInstanceTagKey: 
+       default:  Tag Key of the instances. 
+     pInstanceTagValue:
+       default:  Tag Value of the instances.
+
+###################################################
+#
+# Template Parameter Definitions
+#
+###################################################
+        
+Parameters: 
+
+  pResourceGroupName:
+    Type: String
+    Default: Dev
+    Description: Enter Name of Resource Group.
+    
+  pInstanceTagKey: 
+    Type: String
+    Default: Patch Group
+    Description: Key of the instances which you want to add in this group.
+
+
+  pInstanceTagValue: 
+    Type: String
+    Default: Win
+    Description: Key of the instances which you want to add in this group.
+    
+###################################################
+#
+# Resource definitions
+#
+###################################################
+
+Resources:
+
+  rTagBasedGroup:
+    Type: "AWS::ResourceGroups::Group"
+    Properties:
+      Name: !Ref pResourceGroupName
+      Description: "A group that is created via CFN"
+      ResourceQuery:
+        Type:
+          "TAG_FILTERS_1_0" 
+        Query:
+          ResourceTypeFilters: 
+            - "AWS::EC2::Instance" 
+          TagFilters:
+            - 
+              Key: !Ref pInstanceTagKey 
+              Values: 
+                - !Ref pInstanceTagValue

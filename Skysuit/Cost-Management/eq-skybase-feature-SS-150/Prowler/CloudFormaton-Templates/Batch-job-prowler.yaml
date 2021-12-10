@@ -1,0 +1,256 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  AWS CloudFormation Sample Template Managed Single Batch Job Queue: This
+  template demonstrates the usage of simple Job Queue and EC2 style Compute
+  Environment.  **WARNING** You will be billed for the AWS resources used if you
+  create a stack from this template.
+Parameters:
+  VPC:
+    Description: Enter VPC id
+    Type: 'AWS::EC2::VPC::Id'
+  CRON:
+    Description: Enter the cron expression i.e = cron(0 15 10 ? * *)
+    Type: String
+  ECR:
+    Description: Enter image Arn 
+    Type: String 
+  mySubnetIDs:
+    Description: Subnet IDs
+    Type: 'AWS::EC2::Subnet::Id'
+  AwsOrgId:
+    Type: String
+    Description: Enter AWS Organizations ID
+    AllowedPattern: ^o-[a-z0-9]{10,32}$
+    ConstraintDescription: The Org Id must be a 12 character string starting with o- and followed by 10 lower case alphanumeric characters.
+    Default: o-abcde12345
+  CrossAccountRole:
+    Type: String
+    Description: Enter CrossAccount Role Prowler will be using to assess AWS Accounts in the AWS Organization. (ProwlerCrossAccountRole)
+    AllowedPattern: ^[\w+=,.@-]{1,64}$
+    ConstraintDescription: Max 64 alphanumeric characters. Also special characters [+, =, ., @, -]
+    Default: ProwlerXA-Role
+  ProwlerS3:
+    Type: String
+    Description: Enter S3 Bucket for Prowler Reports.  prefix-awsaccount-awsregion
+    AllowedPattern: ^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$
+    ConstraintDescription: Max 63 characters. Can't start or end with dash.  Can use numbers and lowercase letters.
+    Default: prowler-123456789012-us-east-1
+Resources:
+  RootRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - events.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: root1
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: '*'
+                Resource: '*'
+  
+            
+            
+  SecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: EC2 Security Group for instances launched in the VPC by Batch
+      VpcId: !Ref VPC
+  BatchServiceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: batch.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole'
+  IamInstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Roles:
+        - !Ref EcsInstanceRole
+  EcsInstanceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2008-10-17
+        Statement:
+          - Sid: ''
+            Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: SSM-Agent
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: AllowSsmAgent
+                Effect: Allow
+                Resource: "*"
+                Action:
+                  - ecr:PutImage
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:CompleteLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:InitiateLayerUpload
+                  - ecr:CreateRepository
+                  - ecr:GetAuthorizationToken
+                  - ssm:UpdateInstanceInformation
+                  - ssm:ListInstanceAssociations
+                  - ssm:UpdateInstanceAssociationStatus
+                  - ssm:PutConfigurePackageResult
+                  - ssm:GetManifest
+                  - ssm:PutComplianceItems
+                  - ec2messages:AcknowledgeMessage
+                  - ec2messages:DeleteMessage
+                  - ec2messages:FailMessage
+                  - ec2messages:GetEndpoint
+                  - ec2messages:GetMessages
+                  - ec2messages:SendReply
+        - PolicyName: SSM-Inventory
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: AllowPutInventory
+                Effect: Allow
+                Resource: "*"
+                Action:
+                  - ssm:PutInventory
+              - Sid: AllowGatherInventory
+                Effect: Allow
+                Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}::document/AWS-GatherSoftwareInventory
+                Action:
+                  - ssm:GetDocument
+                  - ssm:DescribeDocument
+        - PolicyName: SSM-SessionManager
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: AllowSessionManager
+                Effect: Allow
+                Resource: "*"
+                Action:
+                  - ssmmessages:CreateControlChannel
+                  - ssmmessages:CreateDataChannel
+                  - ssmmessages:OpenControlChannel
+                  - ssmmessages:OpenDataChannel
+        - PolicyName: Prowler-S3-Reports
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: AllowGetPutListObject
+                Effect: Allow
+                Resource:
+                  - !Sub arn:${AWS::Partition}:s3:::${ProwlerS3}
+                  - !Sub arn:${AWS::Partition}:s3:::${ProwlerS3}/*
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+        - PolicyName: Prowler-CrossAccount-AssumeRole
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: AllowStsAssumeRole
+                Effect: Allow
+                Resource: !Sub arn:${AWS::Partition}:iam::*:role/${CrossAccountRole}
+                Action: sts:AssumeRole
+                Condition:
+                  StringEquals:
+                    aws:PrincipalOrgId: !Ref AwsOrgId
+        - PolicyName: SecurityHub
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 'securityhub:*'
+                Resource: '*'
+              - Effect: Allow
+                Action: 'iam:CreateServiceLinkedRole'
+                Resource: '*'
+                Condition:
+                  StringLike:
+                    'iam:AWSServiceName': securityhub.amazonaws.com
+      ManagedPolicyArns:
+        - >-
+          arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+  JobDefinition:
+    Type: 'AWS::Batch::JobDefinition'
+    Properties:
+      Type: container
+      ContainerProperties:
+        Image: !Ref ECR
+        Vcpus: 2
+        Memory: 2000
+        Command:
+          - echo
+          - Hello world
+      RetryStrategy:
+        Attempts: 1
+      Timeout:
+        AttemptDurationSeconds: 2000
+  JobQueue:
+    Type: 'AWS::Batch::JobQueue'
+    Properties:
+      Priority: 1
+      ComputeEnvironmentOrder:
+        - Order: 1
+          ComputeEnvironment: !Ref ComputeEnvironment
+  ComputeEnvironment:
+    Type: 'AWS::Batch::ComputeEnvironment'
+    Properties:
+      Type: MANAGED
+      ComputeResources:
+        Type: EC2
+        MinvCpus: 0
+        DesiredvCpus: 0
+        MaxvCpus: 64
+        InstanceTypes:
+          - optimal
+        Subnets:
+          - !Ref mySubnetIDs
+        SecurityGroupIds:
+          - !Ref SecurityGroup
+        InstanceRole: !Ref IamInstanceProfile
+      ServiceRole: !Ref BatchServiceRole
+  MyNewEventsRule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Description: cloud watch rule to submit a job defination at  a specific schedule
+      RoleArn: !GetAtt 
+        - RootRole
+        - Arn
+      Name: AWS-batch-job
+      ScheduleExpression: !Ref CRON
+      Targets:
+        - Arn: !Ref JobQueue
+          Id: Id123
+          BatchParameters:
+            JobDefinition: !Ref JobDefinition
+            JobName: prowler
+            RetryStrategy:
+              Attempts: 1
+          RoleArn: !GetAtt 
+            - RootRole
+            - Arn
+Outputs:
+  ComputeEnvironmentArn:
+    Value: !Ref ComputeEnvironment
+  JobQueueArn:
+    Value: !Ref JobQueue
+  JobDefinitionArn:
+    Value: !Ref JobDefinition

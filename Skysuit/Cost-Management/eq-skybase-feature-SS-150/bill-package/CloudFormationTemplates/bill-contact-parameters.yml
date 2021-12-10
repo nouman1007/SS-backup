@@ -1,0 +1,146 @@
+# Create, update and delete parameter in SSM parameter store
+# (c) Enquizit, Inc 2020
+# v1.0 2021-03-02
+
+AWSTemplateFormatVersion: 2010-09-09
+Description: CloudFormation template to create a custom resource to invoke lambda function to create SSM parameters
+
+###################################################
+#
+# CloudFormation Interface Metadata
+#
+###################################################
+
+Metadata:
+
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Lambda Code
+        Parameters:
+          - pBucketName
+          - pLamdaSourceFileSSMParameter
+          - pOrgAccountIds
+          - pSSMParamPrefix
+          - pSESEmailAddresses
+
+    ParameterLabels:
+      pBucketName:
+        default: Lambda Source Bucket
+      pLamdaSourceFileSSMParameter:
+        default: Lambda Source File to create, updatr eand delete parameters in parametere Store
+      pOrgAccountIds:
+        default: Account Ids for the Organization 
+      pSSMParamPrefix:
+        default: Parameter Store Prefix
+      pSSMParamPrefix:
+        default: Recipients email addresses
+
+###################################################
+#
+# Template Parameter Definitions
+#
+###################################################
+
+Parameters:
+
+  pBucketName:
+    Description: Name of the s3 bucket where the lambda functions are stored.
+    Type: String
+    Default: eqskybase-bill-summary-bucket
+
+  pLamdaSourceFileSSMParameter:
+    Description: Name of zip file containing lambda code. Note that this bucket must be in the same region where the stack is created.
+    Type: String
+    Default: bill_contact_parameters.zip
+    
+  pSSMParamPrefix:
+    Description: SSM Parameter prefix to define Parameters Systems Manager -> Paramater Store. A parameter will be created in this format - /acme/billing/contact/{account number}.
+    Type: String
+    Default: /skybase/billing/contact/
+
+  pOrgAccountIds:
+    Description: Account Ids you want the bill report for the Organization. Enter multiple account ids separated by comma
+    Type: String
+    Default: '627240122275,376773251456,522955560990,112520250899,140103392164'
+
+  pSESEmailAddresses:
+    Description: Recipients email addresses separated by comma, make sure that are verified in SES
+    Type: String
+    Default: mahmad@enquizit.com
+
+###################################################
+#
+# Template Resource Definitions
+#
+###################################################
+
+Resources:
+
+  # Custom lambda that creates, updates and delete Parameters in Parameter store
+  rParametersLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: This function create, update and delete billing contact parameters in SSM parameter stores.
+      Handler: bill_contact_parameters.handler
+      Role: !GetAtt rParametersLambdaRole.Arn
+      Runtime: python3.8
+      Timeout: 300
+      Code:
+        S3Bucket: !Ref pBucketName
+        S3Key: !Ref pLamdaSourceFileSSMParameter
+        
+        
+  # Create the role.  Allow Lambda to create, update and delete parameter in SSM parameter store
+  rParametersLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: bill-contacts-policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              Effect: Allow
+              Action:
+              - ssm:PutParameter
+              - ssm:DeleteParameters
+              - ssm:GetParameter
+              Resource:
+              - "*"
+
+  # craete the custom resource to assicate with lambda to invoke
+  rParametersResource:
+    Type: "Custom::Parameters"
+    Properties:
+      ServiceToken: !GetAtt rParametersLambda.Arn
+      ssm_param_prefix: 
+        Ref: pSSMParamPrefix
+      ses_email_addresses: 
+        Ref: pSESEmailAddresses
+      org_account_ids:
+        Ref: pOrgAccountIds
+        
+###################################################
+#
+# Template Outputs
+#
+###################################################
+
+Outputs:
+
+  oSSMParametersLambdaArn:
+    Description: Lambda ARN
+    Value: !GetAtt rParametersLambda.Arn
+
+ 

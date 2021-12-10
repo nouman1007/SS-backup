@@ -1,0 +1,85 @@
+Acceptance criteria:
+
+Ensure AWS backup supports multi-account backup and restore in a Control Tower based LZ
+
+Configure AWS backup to setup backup and retention policy for following services:
+
+EC2
+
+EFS
+
+Use CloudFormation and any other required automation to configure backup and retention policies to be able to set multiple backups at different intervals like every 4 hour, daily, weekly, monthly
+
+Admin and account user with appropriate privileges should be able to view and monitor backups from a central account
+
+Admin and account user  appropriate privileges should be able to restore backups from a central account to a target account.
+
+
+=================================================================================================================================================
+
+Type: AWS::Backup::BackupPlan
+Properties: 
+  BackupPlan: 
+    BackupPlanResourceType
+  BackupPlanTags: Json
+
+===================================================================================================================================================
+
+===============================backup plan===============================
+frequency = set time (daily, weekly, Hourly, custom, cron jod) CFT parameter
+Tags added for restore to recovery point = in lifecycle
+backup plan tags
+
+================================resource assignment======================
+
+resource assignment = arn and tag (parameters in the CFT)
+IAM ROle = Default role
+
+================================console testing===========================
+
+CMK created for Custom Control Tower Resources	This account (112520250899)	e81cf80c-5552-41f8-82ca-793d1a133d9b	Enabled
+
+Default master key that protects my Backup data when no other key is defined	This account (112520250899)	cce7678c-9a28-45fa-af3e-69c5866c2497	Enabled
+
+====================================================================================================================================================
+
+============================================================AWS BACKUP==================RDS==========================================================
+1- Database Password	test123456789
+
+Tags
+purpose = rds-backup-test
+
+==============================================================AWS BACKUP=================DynamoDB=====================================================
+
+Tags
+
+purpose = dynamoDB-backup-test
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,161 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Create organization policies
+     
+Resources:
+
+ # Custom lambda that creates an event on the logging buckets
+  PolicyCreatorFn:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: ctpolicycreator.lambda_handler
+      Description: setsup policy
+      Role: !GetAtt 'PolicyCreatorFnLambdaExecutionRole.Arn'
+      Runtime: python3.7
+      Timeout: 180
+      Environment:
+        Variables:
+          logging_level: INFO
+      Tags:
+        -
+          Key: 'Name'
+          Value: 'ct_ctpolicycreator'
+      Code: './policylambda'
+            
+  PolicyCreatorFnLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: orgpolicy_RW
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Sid: org1
+              Effect: Allow
+              Action:
+              - organizations:ListPoliciesForTarget
+              - organizations:DescribeEffectivePolicy
+              - organizations:ListTargetsForPolicy
+              - organizations:UpdatePolicy
+              - organizations:DetachPolicy
+              - organizations:EnablePolicyType
+              - organizations:AttachPolicy
+              - organizations:DeletePolicy
+              - organizations:DisablePolicyType
+              - organizations:DescribePolicy
+              - organizations:ListPolicies
+              - organizations:CreatePolicy
+              Resource: "*"
+
+  rTagPolicyEQTagPolicy:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt PolicyCreatorFn.Arn
+      PolicyName: !Sub ${AWS::StackName}-BaseTags
+      PolicyType: TAG_POLICY
+      Description: "This policy enforce tagging to all the ec2 instances."
+      PolicyDoc:
+          {
+              "tags": {
+                  "Owner": {
+                      "tag_key": {
+                          "@@assign": "Owner"
+                      },
+                      "enforced_for": {
+                          "@@assign": [
+                              "ec2:instance"
+                          ]
+                      }
+                  },
+                  "Purpose": {
+                      "tag_key": {
+                          "@@assign": "Purpose"
+                      },
+                      "enforced_for": {
+                          "@@assign": [
+                              "ec2:instance"
+                          ]
+                      }
+                  },
+                  "eq-schedule": {
+                      "tag_value": {
+                          "@@assign": [
+                              "eq-default-8pm-est-stop",
+                              "eq-9am:5pm-est",
+                              "eq-manual"
+                          ]
+                      },
+                      "enforced_for": {
+                          "@@assign": [
+                              "ec2:instance"
+                          ]
+                      }
+                  },
+                  "eq:owner": {
+                      "enforced_for": {
+                          "@@assign": [
+                              "ec2:instance"
+                          ]
+                      }
+                  },
+                  "eq:principal-Id": {
+                      "enforced_for": {
+                          "@@assign": [
+                              "ec2:instance"
+                          ]
+                      }
+                  }
+              }
+          }
+
+  rCommonDeny:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt PolicyCreatorFn.Arn
+      PolicyName: !Sub ${AWS::StackName}-CommonDeny
+      PolicyType: SERVICE_CONTROL_POLICY
+      Description: "This SCP denies access to any operations outside of the specified AWS
+      Region, except for actions in the listed services (These are global
+      services that cannot be whitelisted based on region)"
+      PolicyDoc:
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Deny",
+                    "NotAction" : [
+                      "iam:*",
+                      "organizations:*",
+                      "route53:*",
+                      "budgets:*",
+                      "waf:*",
+                      "cloudfront:*",
+                      "globalaccelerator:*",
+                      "importexport:*",
+                      "support:*",
+                      "health:*",
+                      "route53domains:*"
+                    ],                    
+                    "Resource": "*",
+                    "Condition": {
+                        "StringNotEquals": {
+                            "aws:RequestedRegion": [
+                                "us-east-1",
+                                "us-west-1"
+                            ]
+                        }
+                    }
+                }
+            ]
+        }

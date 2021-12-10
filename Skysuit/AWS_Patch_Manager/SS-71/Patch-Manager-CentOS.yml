@@ -1,0 +1,432 @@
+#===============================================================================
+# Create Patch baseline report.
+# scenario, this template must be run in source bucket account.
+#
+# (c) Enquizit, Inc 2019
+# v1.0 2020-07-15
+#================================================================================
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: PatchBaseline, MaintenanceWindow & MaintenanceWindowTarget 
+###################################################
+#
+# CloudFormation Interface Metadata
+#
+###################################################
+Metadata:
+
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: PatchBaseline Information
+      Parameters:
+      - pPatchBaselineName
+      - pOperatingSystem
+      - pPatchGroups
+      - pApproveAfterDays
+      
+    - Label:
+        default: Approval Rules
+      Parameters:
+      - pProduct
+      - pClassification
+      - pSeverity
+      - pComplianceLevel
+      
+    - Label:
+        default: Maintenance Window
+      Parameters:
+      - pMaintenanceWindowName
+      - pAllowUnassociatedTargets
+      - pCutoff
+      - pDuration
+      - pSchedule
+      - pScheduleTimezone
+
+    - Label:
+        default: Maintenance Window Targets
+      Parameters:
+      - pMaintenanceWindowTargetName
+      - pResourceType
+      - pTargetsKey
+      - pTargetsValue
+      - pOwnerInformation
+      
+    - Label:
+        default: Maintenance Window Tasks
+      Parameters:
+      - pMaxConcurrency
+      - pMaxErrors
+      - pPriority
+      - pTaskType
+      - pTaskArn
+      
+    ParameterLabels:
+      pPatchBaselineName:
+        default: PatchBaseline Name
+      pOperatingSystem: 
+        default: Operating System
+      pPatchGroups:
+        default: Patch Groups
+      pProduct:
+        default: PRODUCT
+      pClassification:
+        default: Classification
+      pSeverity:
+        default: Severity
+      pComplianceLevel:
+        default:  Compliance reporting
+      pApproveAfterDays:
+        default: Approve After Days
+      pAllowUnassociatedTargets:
+        default: Allow Unassociated Targets
+      pCutoff:
+        default: Cutoff
+      pDuration:
+       default: Duration
+      pMaintenanceWindowName:
+        default: Name
+      pSchedule:
+        default: Schedule
+      pScheduleTimezone:
+        default: Schedule Timezone
+      pResourceType:
+        default: Resource Type
+      pTargetsKey:
+        default:   Targets Key
+      pTargetsValue:
+        default: Targets Value
+      pOwnerInformation:
+        default: OwnerInformation
+      pMaintenanceWindowTargetName:
+        default: Maintenance WindowName 
+      pMaxConcurrency:
+       default: MaxConcurrency
+      pMaxErrors:
+        default: MaxErrors
+      pPriority:
+        default: Priority
+      pTaskType:
+        default: TaskType
+      pTaskArn:
+        default: TaskArn      
+        
+###################################################
+#
+# Template Parameter Definitions
+#
+###################################################
+Parameters: 
+    
+  pPatchBaselineName:
+    Type: String
+    Default: myPatchBaseline
+    Description: Enter Name of Patch Baseline.
+    
+  pOperatingSystem: 
+    Type: String
+    Default: WINDOWS
+    AllowedValues: 
+      - AMAZON_LINUX
+      - AMAZON_LINUX_2
+      - CENTOS
+      - DEBIAN
+      - ORACLE_LINUX
+      - REDHAT_ENTERPRISE_LINUX
+      - SUSE
+      - UBUNTU
+      - WINDOWS
+    Description: Enter AMAZON_LINUX, AMAZON_LINUX_2, CENTOS, DEBIAN, ORACLE_LINUX, REDHAT_ENTERPRISE_LINUX, SUSE or UBUNTU. Default is WINDOWS.
+
+  pPatchGroups:
+    Type: String
+    MinLength: 1
+    MaxLength: 256  
+    Default: Production
+    # AllowedPattern: ^([\p{L}\p{Z}\p{N}_.:/=+\-@]*)$
+    Description: Enter the name of the patch group that should be registered with the patch baseline.
+    
+  pApproveAfterDays:
+    Type: Number
+    MinValue: 0
+    MaxValue: 100  
+    Default: 7
+    Description: Enter The number of days after the release date of each patch matched by the rule that the patch is marked as approved in the patch baseline.
+    
+  pProduct:
+    Type: String
+    Default: CentOS8.2
+    AllowedValues:
+      # - All  
+      - CentOS6.5
+      - CentOS6.5
+      - CentOS6.6 
+      - CentOS6.6
+      - CentOS6.7
+      - CentOS6.7
+      - CentOS6.8
+      - CentOS6.8
+      - CentOS6.9
+      - CentOS6.9
+      - CentOS6.10
+      - CentOS6.10
+      - CentOS7.0  
+      - CentOS7.1
+      - CentOS7.1  
+      - CentOS7.2  
+      - CentOS7.2 
+      - CentOS7.3  
+      - CentOS7.3  
+      - CentOS7.4  
+      - CentOS7.4  
+      - CentOS7.5  
+      - CentOS7.5  
+      - CentOS7.6  
+      - CentOS7.6  
+      - CentOS7.7  
+      - CentOS7.7  
+      - CentOS7.8 
+      - CentOS8  
+      - CentOS8.0  
+      - CentOS8.0  
+      - CentOS8.1  
+      - CentOS8.1  
+      - CentOS8.2 
+      
+    Description: Enter Product, Default is CentOS8.2.
+
+  pClassification:
+    Type: String
+    Default: Recommended
+    AllowedValues: 
+      # - All
+      - Security
+      - Bugfix
+      - Enhancement
+      - Recommended
+      - Newpackage
+    Description: Enter Classification. Default is Recommended.
+  
+  pSeverity:
+    Type: String
+    Default: Critical
+    AllowedValues: 
+      # - All
+      - Critical
+      - Important
+      - Moderate
+      - Low
+      - Unspecified
+    Description: Enter Severity, Default is Critical.
+    
+  pComplianceLevel:
+    Type: String
+    Default: CRITICAL
+    AllowedValues: 
+      - CRITICAL
+      - HIGH
+      - INFORMATIONAL
+      - MEDIUM
+      - LOW
+      - UNSPECIFIED
+    Description: Enter Compliance, Default is Critical.
+    
+  pAllowUnassociatedTargets:
+    Type: String
+    Default: false
+    AllowedValues: 
+      - true
+      - false
+    Description: Enter Compliance, Default is Critical.
+    
+  pCutoff:
+    Type: Number
+    MinValue: 0
+    MaxValue: 23  
+    Default: 1
+    Description: The number of hours before the end of the maintenance window that Systems Manager stops scheduling new tasks for execution.
+    
+  pDuration:
+    Type: Number
+    MinValue: 1
+    MaxValue: 24  
+    Default: 2
+    Description: The duration of the maintenance window in hours.
+    
+  pMaintenanceWindowName:
+    Type: String
+    Default: OSMaintenanceWindow
+    Description: Enter Name of Maintenance Window.
+    
+  pSchedule:
+    Type: String
+    MinLength: 1
+    MaxLength: 256 
+    Default: cron(0 4 ? * * *)
+    Description: The schedule of the maintenance window in the form of a cron.
+    
+  pScheduleTimezone:
+    Type: String
+    Default: US/Eastern
+    Description: The time zone that the scheduled maintenance window executions are based on, in Internet Assigned Numbers Authority (IANA) format.
+    
+  # pResourceType:
+    # Type: String
+    # Default:INSTANCE
+    # AllowedValues:
+      # - INSTANCE 
+      # - RESOURCE_GROUP
+    # Description: The type of target that is being registered with the maintenance window.
+
+  pTargetsKey:
+    Type: String
+    Default: tag:ENV
+    Description: User-defined criteria for sending commands that target instances that meet the criteria. i.e. tag:ServerRole.
+    
+  pTargetsValue:
+    Type: String
+    Default: DEV
+    Description: User-defined criteria that maps to Key. i.e. WebServer.
+    
+  pOwnerInformation:
+    Type: String
+    Default: SSM Patch manager Demo
+    Description: A user-provided value that will be included in any CloudWatch events that are raised while running tasks for these targets in this maintenance window.
+
+  pMaintenanceWindowTargetName:
+    Type: String
+    Default: SSMPatchManagerDemo
+    Description: The name for the maintenance window target.
+    
+  pMaxConcurrency:
+    Type: String
+    MinLength: 1
+    MaxLength: 7
+    Default: 1
+    Description: The maximum number of targets this task can be run for, in parallel (From 1 to 7).
+    
+  pMaxErrors:
+    Type: String
+    MinLength: 1
+    MaxLength: 7
+    Default: 1
+    Description: The maximum number of errors allowed before this task stops being scheduled (From 1 to 7).
+  
+  pPriority:
+    Type: Number
+    MinValue: 0
+    Default: 0
+    Description: The priority of the task in the maintenance window. The lower the number, the higher the priority. Tasks that have the same priority are scheduled in parallel.
+  
+  pTaskType:
+    Type: String
+    Default: RUN_COMMAND
+    AllowedValues:
+      - AUTOMATION
+      - LAMBDA
+      - RUN_COMMAND 
+      - STEP_FUNCTIONS
+    Description: The type of task. Valid values are RUN_COMMAND, AUTOMATION, LAMBDA, STEP_FUNCTIONS.
+    
+  pTaskArn:
+    Type: String
+    Default: AWS-RunPatchBaseline
+    Description: The resource that the task uses during execution.( a. For RUN_COMMAND and AUTOMATION task types, TaskArn is the SSM document name or Amazon Resource Name (ARN), b.For LAMBDA tasks, TaskArn is the function name or ARN. c.For STEP_FUNCTIONS tasks, TaskArn is the state machine ARN.)
+
+  
+###################################################
+#
+# Resource definitions
+#
+###################################################
+
+Resources:
+  CustomCentOSPatchBaseline:
+    Type: AWS::SSM::PatchBaseline
+    Properties:
+      Name: 
+        Ref: pPatchBaselineName
+      Description: Baseline containing all updates approved for instances
+      OperatingSystem: 
+        Ref : pOperatingSystem
+      PatchGroups:
+      - Ref : pPatchGroups
+      ApprovalRules:
+        PatchRules:
+        - PatchFilterGroup:
+            PatchFilters:
+            - Key: SEVERITY
+              Values:
+                - Ref: pSeverity
+            - Key: PRODUCT
+              Values:
+               - Ref: pProduct
+            - Key: CLASSIFICATION
+              Values:
+               - Ref: pClassification
+          ApproveAfterDays:
+            Ref : pApproveAfterDays
+          ComplianceLevel: 
+            Ref: pComplianceLevel
+          
+  MaintenanceWindow:
+    Type: AWS::SSM::MaintenanceWindow
+    Properties:
+      AllowUnassociatedTargets: 
+        Ref: pAllowUnassociatedTargets
+      Cutoff: 
+        Ref: pCutoff
+      Description: Maintenance Window to update SSM Agent
+      Duration: 
+        Ref: pDuration
+      Name: 
+        Ref: pMaintenanceWindowName
+      Schedule:
+        Ref: pSchedule
+      ScheduleTimezone: 
+        Ref: pScheduleTimezone
+
+  MaintenanceWindowTarget:
+    Type: AWS::SSM::MaintenanceWindowTarget
+    Properties:
+      WindowId:
+        Ref: MaintenanceWindow
+      ResourceType: INSTANCE
+        # Ref: pResourceType
+      Targets:
+      - Key: tag:ENV 
+        # Ref: pTargetsKey
+        Values:
+        - Ref: pTargetsValue
+      OwnerInformation: 
+        Ref: pOwnerInformation
+      Name: 
+        Ref: pMaintenanceWindowTargetName
+      Description: A target for demonstrating maintenance windows and step functions
+    DependsOn: MaintenanceWindow
+    
+  PatchTask:
+    Type: AWS::SSM::MaintenanceWindowTask
+    Properties:
+      Description: Apply OS patches on instances in target
+      MaxConcurrency: 
+        Ref: pMaxConcurrency
+      MaxErrors: 
+        Ref: pMaxErrors
+      Priority: 
+        Ref: pPriority
+      TaskType: 
+        Ref: pTaskType
+      WindowId:
+        Ref: MaintenanceWindow
+      TaskArn: 
+        # Ref: pTaskArn
+        Ref: CustomCentOSPatchBaseline
+      Targets:
+        - Key: WindowTargetIds
+          Values:
+            - Ref: MaintenanceWindowTarget
+    
+
+
+   

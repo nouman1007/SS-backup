@@ -1,0 +1,126 @@
+#===============================================================================
+# Deploy STIG Complaint Golden AMIs
+# (c) Enquizit, Inc 2019
+# v1.0 2020-02-11
+#================================================================================
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'This CloudFormation Template will create Centos Image pipeline for STIG Complaint Golden AMIs using EC2 Image Builder'
+#==================================================
+# Parameters
+#==================================================
+Parameters:        
+
+  pCentosSourceStackName:
+    Description: "Source stack name"
+    Type: String
+
+  pCentosParentImage:
+    Description: Parent Image for the Image recipe
+    Type: String
+
+  pCentosComponents:
+    Description: Components of the Image recipe
+    Type: String
+
+  pCentosImageRecipe:
+    Description: Centos Image Recipe Name
+    Type: String
+
+  pCentosInfrastructureConfiguration:
+    Description: Centos Infrastructure Configuration Name
+    Type: String
+
+  pCentosImagePipeline:
+    Description: Centos Image Pipeline Name
+    Type: String
+
+  pCentosDistributionConfiguration:
+    Description: Centos Distribution Configuration Name
+    Type: String
+    
+#===============================================================
+#                    LINUX STIG AMI PIPELINE
+#===============================================================
+Resources:
+
+  rCentosImageRecipe:
+    Type: AWS::ImageBuilder::ImageRecipe
+    Properties:
+      Name: !Ref pCentosImageRecipe
+      Version: 1.0.2
+      ParentImage: !Ref pCentosParentImage
+      Description: Centos Golden AMI with STIG Components Recipe
+      Components:
+        - ComponentArn: !Ref pCentosComponents
+      Tags:
+        ImageRecipeTagKey: centos-recipe-tag
+
+  rCentosInfrastructureConfiguration:
+    Type: AWS::ImageBuilder::InfrastructureConfiguration
+    Properties: 
+      Name: !Ref pCentosInfrastructureConfiguration
+      InstanceProfileName: 
+        Fn::ImportValue:
+          Fn::Sub: "${pCentosSourceStackName}-InstanceProfile"
+      Description: Infrastucture for Centos Image pipeline
+      InstanceTypes:
+        - t2.xlarge
+      KeyPair: 
+        Fn::ImportValue:
+          Fn::Sub: "${pCentosSourceStackName}-KeyName"
+      TerminateInstanceOnFailure: true
+      SecurityGroupIds: 
+        - Fn::ImportValue:
+            Fn::Sub: "${pCentosSourceStackName}-SecurityGroup"
+      SubnetId: 
+        Fn::ImportValue:
+          Fn::Sub: "${pCentosSourceStackName}-PublicSubnet"
+      Tags:
+        Name: nida-centos-infra-config-tag
+
+  rLinuxImagePipeline:
+    Type: AWS::ImageBuilder::ImagePipeline
+    Properties:
+      Description: Image pipeline to deploy Golden AMIs
+      DistributionConfigurationArn: !GetAtt rCentosDistributionConfiguration.Arn
+      ImageRecipeArn: !Ref rCentosImageRecipe
+      InfrastructureConfigurationArn: !Ref rCentosInfrastructureConfiguration
+      Name: !Ref pCentosImagePipeline
+        
+  rCentosDistributionConfiguration:
+    Type: AWS::ImageBuilder::DistributionConfiguration
+    Properties:
+      Name: !Ref pCentosDistributionConfiguration
+      Description: Output ami configuration
+      Distributions:
+        - Region: !Ref "AWS::Region"
+          AmiDistributionConfiguration:
+            Name: 'eqskybase Centos Custom AMI {{ imagebuilder:buildDate }}'
+            AmiTags: 
+              share: true  
+              Name: eqskybase-Centos-Custom-STIG-AMI-tag-1
+  
+#==============================================================
+#         Cloud Watch Event to Invoke Lambda
+#==============================================================          
+  rCloudwatchRuleInvokeLambda:
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: Schedule expression to trigger Lambda function
+      State: ENABLED
+      ScheduleExpression: "cron(0 10 1 * ? *)"       # Add Schedule expression based on the Image Bulder Pipeline Schedule
+      Targets:
+        - Arn: 
+            Fn::ImportValue:
+                !Sub "${pCentosSourceStackName}-AmiSharingLambdaArn"
+          Id: LambdaV1
+
+  rCloudWatchPermission: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: 
+            Fn::ImportValue:
+                !Sub "${pCentosSourceStackName}-AmiSharingLambdaName"
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt rCloudwatchRuleInvokeLambda.Arn

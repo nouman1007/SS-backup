@@ -1,0 +1,207 @@
+arn:aws:iam::224233068863:role/test-assume-role-NS
+
+
+https://github.com/enquizit/eq-skybase/blob/master/LogMonitoring-EK/EK-Deploy.yaml
+
+https://github.com/enquizit/eq-skybase/blob/master/LogMonitoring-EK/EK-Deploy.yaml
+
+
+rep_lambda_v4.2.zip
+
+cur_report_v3.zip
+
+acct_detail_v1.zip
+
+sma1-test-skybase-cur-report-bucket-destination
+
+
+==================================================================================
+
+
+Code: './lambdas/setup_s3_events'
+
+type %USERPROFILE%\.git-credentials
+
+git remote set-url origin https://noumanshafiq@github.com/enquizit/eq-skybase
+
+https://github.com/enquizit/eq-skybase
+
+git remote add origin https://github.com/enquizit/eq-skybase.git
+
+===================================================================================
+
+
+
+
+
+single nested template 
+with parameter and if condition.
+
+=======================================================================================
+
+
+consolidated-billing-organization-detail
+
+eqtest-bucket-for-reports
+
+consolidated-billing-assume-role
+
+
+=====================================================================================
+
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::224233068863:root"
+      },
+      "Action": [
+        "s3:GetBucketLocation",
+        "s3:GetObject",
+        "s3:GetObjectTagging",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::ns-test-cft-bucket",
+        "arn:aws:s3:::ns-test-cft-bucket/*"
+      ]
+    }
+  ]
+}
+
+=============================
+ns-test-cft-bucket
+
+source tree
+
+destinationbucket name fix  in nested template 
+
+"Resource": ["arn:aws:s3::😘"]
+
+=========================================================================================
+
+The specs are a bit confusing, but the main criteria seem to be these:
+
+Bucket names must be at least 3 and no more than 63 characters long.
+Bucket names must be a series of one or more labels.
+Bucket names can contain lowercase letters, numbers, and hyphens.
+Each label must start and end with a lowercase letter or a number.
+Adjacent labels are separated by a single period (.)
+Bucket names must not be formatted as an IP address (for example, 192.168.5.4)
+
+===========================================================================================
+
+{
+      "Sid": "AllowListingOfUserFolder",
+      "Action": ["s3:ListBucket"],
+      "Effect": "Allow",
+      "Resource": ["arn:aws:s3:::my-company"],
+      "Condition":{"StringLike":{"s3:prefix":["home/David/*"]}}
+    }
+
+===========================================================================================
+
+  ConfigBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: "mytestbucketwithkmsencryptionkey"
+      AccessControl: PublicRead
+      BucketEncryption: 
+        ServerSideEncryptionConfiguration: 
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: aws:kms
+            KMSMasterKeyID: "YOUR KMS KEY ARN" 
+			
+=============================================================================================
+
+
+CreateTestDBPolicy:
+  Type: 'AWS::IAM::ManagedPolicy'
+  Properties:
+    Description: Policy for creating a test database
+    Path: /
+    PolicyDocument:
+      Version: 2012-10-17
+      Statement:
+        - Effect: Allow
+          Action: 'rds:CreateDBInstance'
+          Resource: !Join 
+            - ''
+            - - 'arn:aws:rds:'
+              - !Ref 'AWS::Region'
+              - ':'
+              - !Ref 'AWS::AccountId'
+              - ':db:test*'
+          Condition:
+            StringEquals:
+              'rds:DatabaseEngine': mysql
+        - Effect: Allow
+          Action: 'rds:CreateDBInstance'
+          Resource: !Join 
+            - ''
+            - - 'arn:aws:rds:'
+              - !Ref 'AWS::Region'
+              - ':'
+              - !Ref 'AWS::AccountId'
+              - ':db:test*'
+          Condition:
+            StringEquals:
+              'rds:DatabaseClass': db.t2.micro
+    Groups:
+      - TestDBGroup
+	  
+=====================================================================================================
+
+arn:aws:iam::834800198471:root
+
+=====================================================================================================
+
+1- Packaging
+2- try catch error
+
+
+=====================================================================================================
+
+
+
+
+
+
+
+
+
+
+childTemplates\consolidated_billing_cur_report.yml
+
+consolidated_billing_replication_cross_account.yml
+
+childTemplates\consolidated_Billing_accts_detail.yaml
+
+
+====================================================================================================
+
+CAPABILITY_AUTO_EXPAND
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

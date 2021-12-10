@@ -1,0 +1,57 @@
+#===============================================================================
+# This Template will create an assume role
+#
+# (c) Enquizit, Inc 2019
+# v1.0 2020-07-15
+#================================================================================
+
+AWSTemplateFormatVersion: 2010-09-09
+Description: Configure the AWSCloudFormationStackSet to configur the assume role in member accounts.
+
+###################################################
+#
+# Template Parameter Definitions
+#
+###################################################
+
+Parameters:
+  CentralAccountId:
+    Type: String
+    Description: AWS Account Id of the Central account (the account in which StackSets will be created).
+    MaxLength: 12
+    MinLength: 12
+
+###################################################
+#
+# Template Resource Definitions
+#
+###################################################
+
+Resources:
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: CrossAccountAssumeRole
+      AssumeRolePolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          - Effect: Allow
+            Principal: 
+              AWS:
+                - !Ref CentralAccountId
+            Action: 
+              - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess
+        
+###################################################
+#
+# Template Output Definitions
+#
+###################################################
+        
+Outputs:
+  RoleName:
+    Description: The name of the Role
+    Value: !Ref ExecutionRole
